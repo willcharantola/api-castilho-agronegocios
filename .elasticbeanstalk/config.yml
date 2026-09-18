@@ -2,5 +2,19 @@ branch-defaults:
   default:
     environment: null
     group_suffix: null
+  main:
+    environment: api-castilho-agronegocios-dev
 global:
+  application_name: api-castilho-agronegocios
+  branch: null
+  default_ec2_keyname: castilho-api-key
+  default_platform: Node.js 24 running on 64bit Amazon Linux 2023
+  default_region: us-east-2
+  include_git_submodules: true
+  instance_profile: null
+  platform_name: null
+  platform_version: null
   profile: null
+  repository: null
+  sc: git
+  workspace_type: Application
