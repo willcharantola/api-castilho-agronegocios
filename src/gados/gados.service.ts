@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { handlePrismaError } from '../common/prisma-error.util';
 import { NegociosService } from '../negocios/negocios.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -19,39 +23,67 @@ export class GadosService {
   ) {}
 
   /**
-   * Replica a lógica de cálculo já usada na demonstração do front-end.
-   * TODO: a fórmula de valor_total (peso_calculo * peso_arroba) multiplica duas
-   * grandezas de peso entre si e foge do cálculo usual do setor (peso da arroba ×
-   * valor pago por arroba, que é monetário). Era um placeholder de demonstração
-   * visual — confirmar com o responsável pelo projeto antes de tratar como regra
-   * de negócio definitiva.
+   * Calcula os valores do gado conforme a modalidade do negócio.
+   * TODO: confirmar com o responsável pelo projeto se o campo deveria ser renomeado
+   * para algo mais genérico como valor_unidade, já que hoje seu nome (valor_arroba)
+   * sugere ser exclusivo da modalidade arroba. Aqui ele é lido como "valor por
+   * unidade" (arroba, kg ou cabeça, conforme a modalidade).
+   * Para "kg" e "cabeca", peso_calculo e peso_arroba não se aplicam e são gravados
+   * como 0 (colunas NOT NULL no schema).
    */
   private calcularValores(
     pesoTotal: number,
     rendimentoCarcaca: number,
+    modalidade: string,
+    valorUnidade: number,
   ): ValoresCalculados {
-    const peso_calculo = pesoTotal * (rendimentoCarcaca / 100);
-    const peso_arroba = peso_calculo / 15;
-    const valor_total = peso_calculo * peso_arroba;
-    return { peso_calculo, peso_arroba, valor_total };
+    switch (modalidade) {
+      case 'arroba': {
+        const peso_calculo = pesoTotal * (rendimentoCarcaca / 100);
+        const peso_arroba = Math.ceil(peso_calculo / 15);
+        const valor_total = peso_arroba * valorUnidade;
+        return { peso_calculo, peso_arroba, valor_total };
+      }
+      case 'kg':
+        return {
+          peso_calculo: 0,
+          peso_arroba: 0,
+          valor_total: valorUnidade * pesoTotal,
+        };
+      case 'cabeca':
+        return { peso_calculo: 0, peso_arroba: 0, valor_total: valorUnidade };
+      default:
+        throw new BadRequestException(`Modalidade inválida: ${modalidade}`);
+    }
   }
 
-  private async buscarRendimentoCarcaca(negocioId: number): Promise<number> {
+  private async buscarParametrosNegocio(negocioId: number) {
     const negocio = await this.prisma.negocio.findUnique({
       where: { negocio_id: negocioId },
-      select: { rendimento_carcaca: true },
+      select: {
+        rendimento_carcaca: true,
+        modalidade: true,
+        valor_arroba: true,
+      },
     });
     if (!negocio) {
       throw new NotFoundException(`Negócio ${negocioId} não encontrado`);
     }
-    return negocio.rendimento_carcaca.toNumber();
+    return {
+      rendimentoCarcaca: negocio.rendimento_carcaca.toNumber(),
+      modalidade: negocio.modalidade,
+      valorUnidade: negocio.valor_arroba.toNumber(),
+    };
   }
 
   async create(dto: CreateGadoDto) {
-    const rendimentoCarcaca = await this.buscarRendimentoCarcaca(
-      dto.negocio_id,
+    const negocio = await this.buscarParametrosNegocio(dto.negocio_id);
+    const valores = this.calcularValores(
+      dto.peso_total,
+      negocio.rendimentoCarcaca,
+      negocio.modalidade,
+      negocio.valorUnidade,
     );
-    const valores = this.calcularValores(dto.peso_total, rendimentoCarcaca);
 
     let gado;
     try {
@@ -92,11 +124,12 @@ export class GadosService {
       dto.peso_total !== undefined || dto.negocio_id !== undefined;
     let valores: Partial<ValoresCalculados> = {};
     if (precisaRecalcular) {
-      const rendimentoCarcaca =
-        await this.buscarRendimentoCarcaca(negocioDestino);
+      const negocio = await this.buscarParametrosNegocio(negocioDestino);
       valores = this.calcularValores(
         dto.peso_total ?? atual.peso_total.toNumber(),
-        rendimentoCarcaca,
+        negocio.rendimentoCarcaca,
+        negocio.modalidade,
+        negocio.valorUnidade,
       );
     }
 
