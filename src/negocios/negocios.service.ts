@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { handlePrismaError } from '../common/prisma-error.util';
+import { horaParaDate } from '../common/time.util';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateNegocioDto } from './dto/create-negocio.dto';
 import { UpdateNegocioDto } from './dto/update-negocio.dto';
@@ -15,6 +16,8 @@ export class NegociosService {
         data: {
           ...dto,
           data_negocio: new Date(dto.data_negocio),
+          hora_inicio_pesagem: horaParaDate(dto.hora_inicio_pesagem),
+          hora_fim_pesagem: horaParaDate(dto.hora_fim_pesagem),
           // Agregados sobre os gados do negócio — recalculados por recalcularAgregados()
           // conforme gados são criados/atualizados/removidos. Não existem gados ainda na criação.
           valor_total: 0,
@@ -49,7 +52,7 @@ export class NegociosService {
   async findOne(negocioId: number) {
     const negocio = await this.prisma.negocio.findUnique({
       where: { negocio_id: negocioId },
-      include: { gados: true },
+      include: { gados: true, comprador: true, vendedor: true, fazenda: true },
     });
     if (!negocio) {
       throw new NotFoundException(`Negócio ${negocioId} não encontrado`);
@@ -66,6 +69,12 @@ export class NegociosService {
           ...dto,
           ...(dto.data_negocio
             ? { data_negocio: new Date(dto.data_negocio) }
+            : {}),
+          ...(dto.hora_inicio_pesagem
+            ? { hora_inicio_pesagem: horaParaDate(dto.hora_inicio_pesagem) }
+            : {}),
+          ...(dto.hora_fim_pesagem
+            ? { hora_fim_pesagem: horaParaDate(dto.hora_fim_pesagem) }
             : {}),
         },
       });

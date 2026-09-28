@@ -1,11 +1,15 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsIn, IsInt, IsNotEmpty, IsString, MaxLength } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import {
+  IsArray,
+  IsIn,
+  IsInt,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  MaxLength,
+} from 'class-validator';
 
 export class CreateVendedorDto {
-  @ApiProperty()
-  @IsInt()
-  fazenda_id: number;
-
   @ApiProperty({ maxLength: 50 })
   @IsString()
   @IsNotEmpty()
@@ -45,4 +49,14 @@ export class CreateVendedorDto {
   @IsNotEmpty()
   @MaxLength(50)
   chave_pix: string;
+
+  @ApiPropertyOptional({
+    type: [Number],
+    description:
+      'IDs das fazendas às quais o vendedor será associado (N:N). Em PATCH, substitui as associações existentes.',
+  })
+  @IsOptional()
+  @IsArray()
+  @IsInt({ each: true })
+  fazenda_ids?: number[];
 }
