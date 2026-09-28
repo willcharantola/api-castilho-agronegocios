@@ -1,5 +1,5 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsNotEmpty, IsString, MaxLength } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
 
 export class CreateFazendaDto {
   @ApiProperty({ maxLength: 50 })
@@ -19,4 +19,16 @@ export class CreateFazendaDto {
   @IsNotEmpty()
   @MaxLength(12)
   inscricao_estadual: string;
+
+  @ApiPropertyOptional({ maxLength: 500 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  marca_url?: string;
+
+  @ApiPropertyOptional({ maxLength: 10 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(10)
+  marca_escrita?: string;
 }

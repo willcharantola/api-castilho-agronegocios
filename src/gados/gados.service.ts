@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { handlePrismaError } from '../common/prisma-error.util';
+import { horaParaDate } from '../common/time.util';
 import { NegociosService } from '../negocios/negocios.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateGadoDto } from './dto/create-gado.dto';
@@ -23,11 +24,9 @@ export class GadosService {
   ) {}
 
   /**
-   * Calcula os valores do gado conforme a modalidade do negócio.
-   * TODO: confirmar com o responsável pelo projeto se o campo deveria ser renomeado
-   * para algo mais genérico como valor_unidade, já que hoje seu nome (valor_arroba)
-   * sugere ser exclusivo da modalidade arroba. Aqui ele é lido como "valor por
-   * unidade" (arroba, kg ou cabeça, conforme a modalidade).
+   * Calcula os valores do gado conforme a modalidade do negócio. O
+   * rendimento_carcaca vem do próprio gado (ajustável por animal na pesagem).
+   * valorUnidade é o valor por arroba, kg ou cabeça, conforme a modalidade.
    * Para "kg" e "cabeca", peso_calculo e peso_arroba não se aplicam e são gravados
    * como 0 (colunas NOT NULL no schema).
    */
@@ -61,18 +60,16 @@ export class GadosService {
     const negocio = await this.prisma.negocio.findUnique({
       where: { negocio_id: negocioId },
       select: {
-        rendimento_carcaca: true,
         modalidade: true,
-        valor_arroba: true,
+        valor_unidade: true,
       },
     });
     if (!negocio) {
       throw new NotFoundException(`Negócio ${negocioId} não encontrado`);
     }
     return {
-      rendimentoCarcaca: negocio.rendimento_carcaca.toNumber(),
       modalidade: negocio.modalidade,
-      valorUnidade: negocio.valor_arroba.toNumber(),
+      valorUnidade: negocio.valor_unidade.toNumber(),
     };
   }
 
@@ -80,7 +77,7 @@ export class GadosService {
     const negocio = await this.buscarParametrosNegocio(dto.negocio_id);
     const valores = this.calcularValores(
       dto.peso_total,
-      negocio.rendimentoCarcaca,
+      dto.rendimento_carcaca,
       negocio.modalidade,
       negocio.valorUnidade,
     );
@@ -91,6 +88,9 @@ export class GadosService {
         data: {
           ...dto,
           data_pesagem: new Date(dto.data_pesagem),
+          horario_pesagem: dto.horario_pesagem
+            ? horaParaDate(dto.horario_pesagem)
+            : undefined,
           ...valores,
         },
       });
@@ -121,13 +121,15 @@ export class GadosService {
 
     const negocioDestino = dto.negocio_id ?? atual.negocio_id;
     const precisaRecalcular =
-      dto.peso_total !== undefined || dto.negocio_id !== undefined;
+      dto.peso_total !== undefined ||
+      dto.rendimento_carcaca !== undefined ||
+      dto.negocio_id !== undefined;
     let valores: Partial<ValoresCalculados> = {};
     if (precisaRecalcular) {
       const negocio = await this.buscarParametrosNegocio(negocioDestino);
       valores = this.calcularValores(
         dto.peso_total ?? atual.peso_total.toNumber(),
-        negocio.rendimentoCarcaca,
+        dto.rendimento_carcaca ?? atual.rendimento_carcaca.toNumber(),
         negocio.modalidade,
         negocio.valorUnidade,
       );
@@ -141,6 +143,9 @@ export class GadosService {
           ...dto,
           ...(dto.data_pesagem
             ? { data_pesagem: new Date(dto.data_pesagem) }
+            : {}),
+          ...(dto.horario_pesagem
+            ? { horario_pesagem: horaParaDate(dto.horario_pesagem) }
             : {}),
           ...valores,
         },

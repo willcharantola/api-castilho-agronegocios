@@ -6,6 +6,7 @@ import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
+import { CompradoresModule } from './compradores/compradores.module';
 import { EmpresasModule } from './empresas/empresas.module';
 import { FazendasModule } from './fazendas/fazendas.module';
 import { GadosModule } from './gados/gados.module';
@@ -23,6 +24,7 @@ import { VendedoresModule } from './vendedores/vendedores.module';
     UsuariosModule,
     FazendasModule,
     VendedoresModule,
+    CompradoresModule,
     NegociosModule,
     GadosModule,
   ],

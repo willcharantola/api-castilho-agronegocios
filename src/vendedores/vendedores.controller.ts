@@ -9,6 +9,7 @@ import {
   Post,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { AssociarFazendaDto } from './dto/associar-fazenda.dto';
 import { CreateVendedorDto } from './dto/create-vendedor.dto';
 import { UpdateVendedorDto } from './dto/update-vendedor.dto';
 import { VendedoresService } from './vendedores.service';
@@ -45,5 +46,21 @@ export class VendedoresController {
   @Delete(':id')
   remove(@Param('id', ParseIntPipe) id: number) {
     return this.vendedoresService.remove(id);
+  }
+
+  @Post(':id/fazendas')
+  associarFazenda(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: AssociarFazendaDto,
+  ) {
+    return this.vendedoresService.associarFazenda(id, dto.fazenda_id);
+  }
+
+  @Delete(':id/fazendas/:fazendaId')
+  desassociarFazenda(
+    @Param('id', ParseIntPipe) id: number,
+    @Param('fazendaId', ParseIntPipe) fazendaId: number,
+  ) {
+    return this.vendedoresService.desassociarFazenda(id, fazendaId);
   }
 }

@@ -1,15 +1,17 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsDateString,
   IsIn,
   IsInt,
   IsNotEmpty,
   IsNumber,
+  IsOptional,
   IsString,
-  Max,
+  Matches,
   MaxLength,
   Min,
 } from 'class-validator';
+import { HORA_REGEX } from '../../common/time.util';
 
 export class CreateNegocioDto {
   @ApiProperty()
@@ -20,17 +22,21 @@ export class CreateNegocioDto {
   @IsInt()
   fazenda_id: number;
 
-  @ApiProperty({ maxLength: 50 })
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(50)
-  marchante: string;
+  @ApiProperty({ description: 'Vendedor que efetivamente fechou o negócio.' })
+  @IsInt()
+  vendedor_id: number;
 
-  @ApiProperty({ maxLength: 50 })
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(50)
-  comprador: string;
+  @ApiProperty()
+  @IsInt()
+  comprador_id: number;
+
+  @ApiProperty({ example: '08:00', description: 'HH:mm ou HH:mm:ss' })
+  @Matches(HORA_REGEX)
+  hora_inicio_pesagem: string;
+
+  @ApiProperty({ example: '12:30', description: 'HH:mm ou HH:mm:ss' })
+  @Matches(HORA_REGEX)
+  hora_fim_pesagem: string;
 
   @ApiProperty({ enum: ['arroba', 'kg', 'cabeca'] })
   @IsIn(['arroba', 'kg', 'cabeca'])
@@ -48,44 +54,38 @@ export class CreateNegocioDto {
 
   // TODO: confirmar domínio de valores válidos com o responsável pelo projeto
   @ApiProperty({
-    maxLength: 20,
+    maxLength: 10,
     description:
       'TODO: domínio de valores válidos ainda não confirmado com o responsável pelo projeto.',
   })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(20)
+  @MaxLength(10)
   tipo_precificacao: string;
-
-  @ApiProperty({
-    minimum: 0,
-    maximum: 100,
-    description: 'Percentual entre 0 e 100.',
-  })
-  @IsNumber()
-  @Min(0)
-  @Max(100)
-  rendimento_carcaca: number;
 
   @ApiProperty({ example: '2026-09-09T00:00:00.000Z' })
   @IsDateString()
   data_negocio: string;
 
-  @ApiProperty({ minimum: 0 })
+  @ApiPropertyOptional({ minimum: 0 })
+  @IsOptional()
   @IsNumber()
   @Min(0)
-  comissao: number;
+  comissao?: number;
 
-  @ApiProperty({ minimum: 0 })
+  @ApiProperty({
+    minimum: 0,
+    description: 'Valor por arroba, kg ou cabeça, conforme a modalidade.',
+  })
   @IsNumber()
   @Min(0)
-  valor_arroba: number;
+  valor_unidade: number;
 
-  @ApiProperty({ maxLength: 100 })
+  @ApiPropertyOptional({ maxLength: 100 })
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
   @MaxLength(100)
-  observacao: string;
+  observacao?: string;
 
   // valor_total, valor_medio, qtd_animais, mais_pesado e mais_leve são agregados
   // calculados no backend a partir dos gados do negócio — não fazem parte do DTO.
