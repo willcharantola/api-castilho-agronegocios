@@ -10,6 +10,7 @@ import {
   Matches,
   MaxLength,
   Min,
+  ValidateIf,
 } from 'class-validator';
 import { HORA_REGEX } from '../../common/time.util';
 
@@ -30,13 +31,32 @@ export class CreateNegocioDto {
   @IsInt()
   comprador_id: number;
 
-  @ApiProperty({ example: '08:00', description: 'HH:mm ou HH:mm:ss' })
+  // Opcionais no banco: não se aplicam à modalidade "cabeca" (sem pesagem física).
+  // Para "arroba"/"kg" continuam obrigatórios, como antes — por isso @ValidateIf em vez
+  // de @IsOptional (que dispensaria a validação para qualquer modalidade).
+  @ApiPropertyOptional({
+    example: '08:00',
+    description:
+      'HH:mm ou HH:mm:ss. Obrigatório para "arroba"/"kg"; opcional para "cabeca".',
+  })
+  @ValidateIf(
+    (o: CreateNegocioDto) =>
+      o.modalidade !== 'cabeca' || o.hora_inicio_pesagem != null,
+  )
   @Matches(HORA_REGEX)
-  hora_inicio_pesagem: string;
+  hora_inicio_pesagem?: string;
 
-  @ApiProperty({ example: '12:30', description: 'HH:mm ou HH:mm:ss' })
+  @ApiPropertyOptional({
+    example: '12:30',
+    description:
+      'HH:mm ou HH:mm:ss. Obrigatório para "arroba"/"kg"; opcional para "cabeca".',
+  })
+  @ValidateIf(
+    (o: CreateNegocioDto) =>
+      o.modalidade !== 'cabeca' || o.hora_fim_pesagem != null,
+  )
   @Matches(HORA_REGEX)
-  hora_fim_pesagem: string;
+  hora_fim_pesagem?: string;
 
   @ApiProperty({ enum: ['arroba', 'kg', 'cabeca'] })
   @IsIn(['arroba', 'kg', 'cabeca'])
@@ -89,4 +109,5 @@ export class CreateNegocioDto {
 
   // valor_total, valor_medio, qtd_animais, mais_pesado e mais_leve são agregados
   // calculados no backend a partir dos gados do negócio — não fazem parte do DTO.
+  // valor_medio, mais_pesado e mais_leve ficam NULL na modalidade "cabeca".
 }

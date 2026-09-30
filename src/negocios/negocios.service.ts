@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { handlePrismaError } from '../common/prisma-error.util';
 import { horaParaDate } from '../common/time.util';
@@ -11,20 +15,27 @@ export class NegociosService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(dto: CreateNegocioDto) {
+    // Na modalidade "cabeca" não há pesagem física: os agregados de peso ficam NULL
+    // e qtd_animais/valor_total são informados depois via PATCH /negocios/:id.
+    const porCabeca = dto.modalidade === 'cabeca';
     try {
       return await this.prisma.negocio.create({
         data: {
           ...dto,
           data_negocio: new Date(dto.data_negocio),
-          hora_inicio_pesagem: horaParaDate(dto.hora_inicio_pesagem),
-          hora_fim_pesagem: horaParaDate(dto.hora_fim_pesagem),
+          hora_inicio_pesagem: dto.hora_inicio_pesagem
+            ? horaParaDate(dto.hora_inicio_pesagem)
+            : null,
+          hora_fim_pesagem: dto.hora_fim_pesagem
+            ? horaParaDate(dto.hora_fim_pesagem)
+            : null,
           // Agregados sobre os gados do negócio — recalculados por recalcularAgregados()
           // conforme gados são criados/atualizados/removidos. Não existem gados ainda na criação.
           valor_total: 0,
-          valor_medio: 0,
+          valor_medio: porCabeca ? null : 0,
           qtd_animais: 0,
-          mais_pesado: 0,
-          mais_leve: 0,
+          mais_pesado: porCabeca ? null : 0,
+          mais_leve: porCabeca ? null : 0,
         },
       });
     } catch (error) {
@@ -61,20 +72,47 @@ export class NegociosService {
   }
 
   async update(negocioId: number, dto: UpdateNegocioDto) {
-    await this.findOne(negocioId);
+    const atual = await this.findOne(negocioId);
+    // valor_total nunca é aceito do cliente — cálculo autoritativo no servidor.
+    const { valor_total: _valorTotalIgnorado, ...campos } = dto;
+
+    // qtd_animais só pode ser informado diretamente na modalidade "cabeca"; nas demais
+    // é um agregado dos registros de `gado` (ver recalcularAgregados()).
+    if (campos.qtd_animais !== undefined && atual.modalidade !== 'cabeca') {
+      throw new BadRequestException(
+        `qtd_animais só pode ser informado para negócios da modalidade "cabeca" ` +
+          `(negócio ${negocioId} é "${atual.modalidade}")`,
+      );
+    }
+
+    // Modalidade "cabeca": valor_total = qtd_animais × valor_unidade, recalculado
+    // sempre que um dos dois muda. mais_pesado, mais_leve, valor_medio e os horários
+    // de pesagem não são tocados aqui (permanecem NULL).
+    let valorTotalPorCabeca: { valor_total: number } | undefined;
+    if (
+      atual.modalidade === 'cabeca' &&
+      (campos.qtd_animais !== undefined || campos.valor_unidade !== undefined)
+    ) {
+      const qtd = campos.qtd_animais ?? atual.qtd_animais;
+      const valorUnidade =
+        campos.valor_unidade ?? atual.valor_unidade.toNumber();
+      valorTotalPorCabeca = { valor_total: qtd * valorUnidade };
+    }
+
     try {
       return await this.prisma.negocio.update({
         where: { negocio_id: negocioId },
         data: {
-          ...dto,
-          ...(dto.data_negocio
-            ? { data_negocio: new Date(dto.data_negocio) }
+          ...campos,
+          ...valorTotalPorCabeca,
+          ...(campos.data_negocio
+            ? { data_negocio: new Date(campos.data_negocio) }
             : {}),
-          ...(dto.hora_inicio_pesagem
-            ? { hora_inicio_pesagem: horaParaDate(dto.hora_inicio_pesagem) }
+          ...(campos.hora_inicio_pesagem
+            ? { hora_inicio_pesagem: horaParaDate(campos.hora_inicio_pesagem) }
             : {}),
-          ...(dto.hora_fim_pesagem
-            ? { hora_fim_pesagem: horaParaDate(dto.hora_fim_pesagem) }
+          ...(campos.hora_fim_pesagem
+            ? { hora_fim_pesagem: horaParaDate(campos.hora_fim_pesagem) }
             : {}),
         },
       });
