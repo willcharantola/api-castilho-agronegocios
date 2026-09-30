@@ -165,6 +165,14 @@ Campos que **a API calcula sozinha e retorna, mas o front não envia**: `negocio
 `valor_medio`, `qtd_animais`, `mais_pesado`, `mais_leve` — são recalculados automaticamente a
 partir dos `gados` vinculados sempre que um gado é criado/editado/removido nesse negócio.
 
+**Modalidade `"cabeca"`** (sem pesagem individual): nenhum `gado` é cadastrado. `hora_inicio_pesagem`
+e `hora_fim_pesagem` são opcionais no `POST` (obrigatórios para `"arroba"`/`"kg"`); `valor_medio`,
+`mais_pesado` e `mais_leve` ficam `null`. A quantidade e o valor por cabeça são enviados depois via
+`PATCH /negocios/:id` com `qtd_animais` + `valor_unidade`; a API recalcula
+`valor_total = qtd_animais × valor_unidade` (um `valor_total` enviado é ignorado). `qtd_animais` no
+`PATCH` é rejeitado (400) para as outras modalidades, e `POST /gados` é rejeitado (400) para
+negócios `"cabeca"`.
+
 ### `gado`
 Campos enviados pelo front: `negocio_id`, `peso_total`, `data_pesagem` (ISO 8601), `genero`
 (`"Macho"` | `"Femea"`), `denominacao`, `era`, `carimbo`.

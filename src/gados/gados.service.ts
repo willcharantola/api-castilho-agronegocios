@@ -73,8 +73,24 @@ export class GadosService {
     };
   }
 
+  /**
+   * PROVISÓRIO (ponto em aberto #1, aguardando decisão do responsável pelo projeto):
+   * negócios da modalidade "cabeca" não têm registros individuais em `gado` — a
+   * quantidade vai direto em negocio.qtd_animais via PATCH /negocios/:id. Bloqueia
+   * novos vínculos para não misturar os dois modelos (recalcularAgregados()
+   * sobrescreveria o qtd_animais informado).
+   */
+  private garantirModalidadeComGado(modalidade: string, negocioId: number) {
+    if (modalidade === 'cabeca') {
+      throw new BadRequestException(
+        `Negócio ${negocioId} é da modalidade "cabeca" e não aceita cadastro individual de gado`,
+      );
+    }
+  }
+
   async create(dto: CreateGadoDto) {
     const negocio = await this.buscarParametrosNegocio(dto.negocio_id);
+    this.garantirModalidadeComGado(negocio.modalidade, dto.negocio_id);
     const valores = this.calcularValores(
       dto.peso_total,
       dto.rendimento_carcaca,
@@ -125,6 +141,10 @@ export class GadosService {
       dto.rendimento_carcaca !== undefined ||
       dto.negocio_id !== undefined;
     let valores: Partial<ValoresCalculados> = {};
+    if (dto.negocio_id !== undefined && dto.negocio_id !== atual.negocio_id) {
+      const destino = await this.buscarParametrosNegocio(dto.negocio_id);
+      this.garantirModalidadeComGado(destino.modalidade, dto.negocio_id);
+    }
     if (precisaRecalcular) {
       const negocio = await this.buscarParametrosNegocio(negocioDestino);
       valores = this.calcularValores(
