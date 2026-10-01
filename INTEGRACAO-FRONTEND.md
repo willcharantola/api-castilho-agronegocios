@@ -127,7 +127,7 @@ Base URL: `NEXT_PUBLIC_API_URL`. Todos exigem JWT exceto os marcados como **púb
 | Usuários | `GET/POST /usuarios`, `GET/PATCH/DELETE /usuarios/:id` | **Exige `nivel_acesso: "Admin"`** em todas as rotas |
 | Fazendas | `GET/POST /fazendas`, `GET/PATCH/DELETE /fazendas/:id` | — |
 | Vendedores | `GET/POST /vendedores`, `GET/PATCH/DELETE /vendedores/:id` | — |
-| Negócios | `GET/POST /negocios`, `GET/PATCH /negocios/:id`, `DELETE /negocios/:id` | `DELETE` **exige `Admin`**. `GET /negocios/:id` inclui os `gados` do negócio. `GET /negocios` aceita `?fazenda_id=&data_inicio=&data_fim=` |
+| Negócios | `GET/POST /negocios`, `GET/PATCH /negocios/:id`, `PATCH /negocios/:id/concluir`, `DELETE /negocios/:id` | `DELETE` **exige `Admin`**. `GET /negocios/:id` inclui os `gados` do negócio. `GET /negocios` aceita `?fazenda_id=&data_inicio=&data_fim=` |
 | Gados | `GET/POST /gados`, `GET/PATCH/DELETE /gados/:id` | Cada gado pertence a um `negocio_id` |
 
 A documentação interativa (Swagger) está em `${NEXT_PUBLIC_API_URL}/docs` — útil para explorar
@@ -157,7 +157,7 @@ usam — ajuste os `types`/`interfaces` do Next.js de acordo.
 Campos enviados pelo front no `POST`/`PATCH`:
 `empresa_id`, `fazenda_id`, `marchante`, `comprador`, `modalidade` (`"arroba"` | `"kg"` | `"cabeca"`),
 `tipo_gado` (`"Gordo"` | `"Magro"`), `tipo_lote` (`"Vaca"` | `"Boi"` | `"Novilha"` | `"Garrote"` |
-`"Bezerro"` | `"Variados"`), `tipo_precificacao` (string livre — domínio ainda não definido),
+`"Bezerro"` | `"Variados"`),
 `rendimento_carcaca` (número, 0–100), `data_negocio` (ISO 8601), `comissao`, `valor_arroba`,
 `observacao`.
 
@@ -165,8 +165,18 @@ Campos que **a API calcula sozinha e retorna, mas o front não envia**: `negocio
 `valor_medio`, `qtd_animais`, `mais_pesado`, `mais_leve` — são recalculados automaticamente a
 partir dos `gados` vinculados sempre que um gado é criado/editado/removido nesse negócio.
 
-**Modalidade `"cabeca"`** (sem pesagem individual): nenhum `gado` é cadastrado. `hora_inicio_pesagem`
-e `hora_fim_pesagem` são opcionais no `POST` (obrigatórios para `"arroba"`/`"kg"`); `valor_medio`,
+**Horários de pesagem** (registrados pelo servidor, nunca enviados pelo front — enviá-los gera 400):
+`hora_inicio_pesagem` é gravado no primeiro `POST /gados` do negócio (não é sobrescrito nos
+seguintes); `hora_fim_pesagem` é gravado em `PATCH /negocios/:id/concluir` (botão "Concluir").
+Os horários são a **hora local do cliente**: o front envia o fuso do aparelho no header
+`X-Fuso-Horario` (ex.: `America/Cuiaba`) e a API converte o instante do servidor para esse fuso
+(sem header ou com fuso inválido, usa `America/Sao_Paulo`).
+
+`tipo_precificacao` foi removido do contrato; a API grava `"N/A"` provisoriamente até a coluna
+ser removida do banco.
+
+**Modalidade `"cabeca"`** (sem pesagem individual): nenhum `gado` é cadastrado, então
+`hora_inicio_pesagem` e `hora_fim_pesagem` ficam `null`; `valor_medio`,
 `mais_pesado` e `mais_leve` ficam `null`. A quantidade e o valor por cabeça são enviados depois via
 `PATCH /negocios/:id` com `qtd_animais` + `valor_unidade`; a API recalcula
 `valor_total = qtd_animais × valor_unidade` (um `valor_total` enviado é ignorado). `qtd_animais` no
@@ -175,7 +185,8 @@ negócios `"cabeca"`.
 
 ### `gado`
 Campos enviados pelo front: `negocio_id`, `peso_total`, `data_pesagem` (ISO 8601), `genero`
-(`"Macho"` | `"Femea"`), `denominacao`, `era`, `carimbo`.
+(`"Macho"` | `"Femea"`), `denominacao`, `era`, `carimbo`. `horario_pesagem` é gravado pelo
+servidor no cadastro (não enviar).
 
 Campos calculados pela API (não enviar): `gado_id`, `peso_calculo`, `peso_arroba`, `valor_total`
 — calculados a partir de `peso_total` e do `rendimento_carcaca` do negócio pai.

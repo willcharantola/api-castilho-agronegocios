@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { handlePrismaError } from '../common/prisma-error.util';
-import { horaParaDate } from '../common/time.util';
+import { horaAtual } from '../common/time.util';
 import { NegociosService } from '../negocios/negocios.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateGadoDto } from './dto/create-gado.dto';
@@ -88,7 +88,7 @@ export class GadosService {
     }
   }
 
-  async create(dto: CreateGadoDto) {
+  async create(dto: CreateGadoDto, fuso?: string) {
     const negocio = await this.buscarParametrosNegocio(dto.negocio_id);
     this.garantirModalidadeComGado(negocio.modalidade, dto.negocio_id);
     const valores = this.calcularValores(
@@ -104,9 +104,8 @@ export class GadosService {
         data: {
           ...dto,
           data_pesagem: new Date(dto.data_pesagem),
-          horario_pesagem: dto.horario_pesagem
-            ? horaParaDate(dto.horario_pesagem)
-            : undefined,
+          // Hora local do cliente no momento do cadastro (instante do servidor, fuso do cliente).
+          horario_pesagem: horaAtual(fuso),
           ...valores,
         },
       });
@@ -114,6 +113,8 @@ export class GadosService {
       handlePrismaError(error);
     }
 
+    // Primeiro gado do negócio marca o início da pesagem (no-op nos seguintes).
+    await this.negociosService.registrarInicioPesagem(dto.negocio_id, fuso);
     await this.negociosService.recalcularAgregados(dto.negocio_id);
     return gado;
   }
@@ -163,9 +164,6 @@ export class GadosService {
           ...dto,
           ...(dto.data_pesagem
             ? { data_pesagem: new Date(dto.data_pesagem) }
-            : {}),
-          ...(dto.horario_pesagem
-            ? { horario_pesagem: horaParaDate(dto.horario_pesagem) }
             : {}),
           ...valores,
         },
