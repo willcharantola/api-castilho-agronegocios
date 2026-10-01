@@ -1,18 +1,16 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty } from '@nestjs/swagger';
 import {
   IsDateString,
   IsIn,
   IsInt,
   IsNotEmpty,
   IsNumber,
-  IsOptional,
   IsString,
   Matches,
   Max,
   MaxLength,
   Min,
 } from 'class-validator';
-import { HORA_REGEX } from '../../common/time.util';
 
 export class CreateGadoDto {
   @ApiProperty()
@@ -38,10 +36,7 @@ export class CreateGadoDto {
   @IsDateString()
   data_pesagem: string;
 
-  @ApiPropertyOptional({ example: '09:15', description: 'HH:mm ou HH:mm:ss' })
-  @IsOptional()
-  @Matches(HORA_REGEX)
-  horario_pesagem?: string;
+  // horario_pesagem não é aceito do cliente: registrado pelo servidor no cadastro.
 
   @ApiProperty({ enum: ['Macho', 'Femea'] })
   @IsIn(['Macho', 'Femea'])

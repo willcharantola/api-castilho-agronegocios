@@ -5,7 +5,7 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { handlePrismaError } from '../common/prisma-error.util';
-import { horaParaDate } from '../common/time.util';
+import { horaAtual } from '../common/time.util';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateNegocioDto } from './dto/create-negocio.dto';
 import { UpdateNegocioDto } from './dto/update-negocio.dto';
@@ -23,12 +23,12 @@ export class NegociosService {
         data: {
           ...dto,
           data_negocio: new Date(dto.data_negocio),
-          hora_inicio_pesagem: dto.hora_inicio_pesagem
-            ? horaParaDate(dto.hora_inicio_pesagem)
-            : null,
-          hora_fim_pesagem: dto.hora_fim_pesagem
-            ? horaParaDate(dto.hora_fim_pesagem)
-            : null,
+          // TODO: remover esta coluna via migration (DROP COLUMN tipo_precificacao) assim que houver acesso ao banco; até lá, mantém-se este valor fixo apenas para satisfazer a restrição NOT NULL
+          tipo_precificacao: 'N/A',
+          // Preenchidos pelo servidor: hora_inicio_pesagem no primeiro gado cadastrado
+          // (GadosService.create) e hora_fim_pesagem ao concluir o cadastro (concluir()).
+          hora_inicio_pesagem: null,
+          hora_fim_pesagem: null,
           // Agregados sobre os gados do negócio — recalculados por recalcularAgregados()
           // conforme gados são criados/atualizados/removidos. Não existem gados ainda na criação.
           valor_total: 0,
@@ -108,17 +108,39 @@ export class NegociosService {
           ...(campos.data_negocio
             ? { data_negocio: new Date(campos.data_negocio) }
             : {}),
-          ...(campos.hora_inicio_pesagem
-            ? { hora_inicio_pesagem: horaParaDate(campos.hora_inicio_pesagem) }
-            : {}),
-          ...(campos.hora_fim_pesagem
-            ? { hora_fim_pesagem: horaParaDate(campos.hora_fim_pesagem) }
-            : {}),
         },
       });
     } catch (error) {
       handlePrismaError(error);
     }
+  }
+
+  /**
+   * Finaliza o cadastro do negócio (botão "Concluir" do fluxo de cadastro de gados):
+   * registra hora_fim_pesagem com a hora local do cliente (ver horaAtual).
+   */
+  async concluir(negocioId: number, fuso?: string) {
+    await this.findOne(negocioId);
+    try {
+      return await this.prisma.negocio.update({
+        where: { negocio_id: negocioId },
+        data: { hora_fim_pesagem: horaAtual(fuso) },
+      });
+    } catch (error) {
+      handlePrismaError(error);
+    }
+  }
+
+  /**
+   * Registra hora_inicio_pesagem apenas se ainda estiver NULL — ou seja, só no
+   * primeiro gado cadastrado no negócio. O filtro no próprio UPDATE torna a
+   * operação atômica: cadastros simultâneos não sobrescrevem o valor.
+   */
+  async registrarInicioPesagem(negocioId: number, fuso?: string) {
+    await this.prisma.negocio.updateMany({
+      where: { negocio_id: negocioId, hora_inicio_pesagem: null },
+      data: { hora_inicio_pesagem: horaAtual(fuso) },
+    });
   }
 
   async remove(negocioId: number) {

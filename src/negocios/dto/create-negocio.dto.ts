@@ -3,16 +3,12 @@ import {
   IsDateString,
   IsIn,
   IsInt,
-  IsNotEmpty,
   IsNumber,
   IsOptional,
   IsString,
-  Matches,
   MaxLength,
   Min,
-  ValidateIf,
 } from 'class-validator';
-import { HORA_REGEX } from '../../common/time.util';
 
 export class CreateNegocioDto {
   @ApiProperty()
@@ -31,32 +27,8 @@ export class CreateNegocioDto {
   @IsInt()
   comprador_id: number;
 
-  // Opcionais no banco: não se aplicam à modalidade "cabeca" (sem pesagem física).
-  // Para "arroba"/"kg" continuam obrigatórios, como antes — por isso @ValidateIf em vez
-  // de @IsOptional (que dispensaria a validação para qualquer modalidade).
-  @ApiPropertyOptional({
-    example: '08:00',
-    description:
-      'HH:mm ou HH:mm:ss. Obrigatório para "arroba"/"kg"; opcional para "cabeca".',
-  })
-  @ValidateIf(
-    (o: CreateNegocioDto) =>
-      o.modalidade !== 'cabeca' || o.hora_inicio_pesagem != null,
-  )
-  @Matches(HORA_REGEX)
-  hora_inicio_pesagem?: string;
-
-  @ApiPropertyOptional({
-    example: '12:30',
-    description:
-      'HH:mm ou HH:mm:ss. Obrigatório para "arroba"/"kg"; opcional para "cabeca".',
-  })
-  @ValidateIf(
-    (o: CreateNegocioDto) =>
-      o.modalidade !== 'cabeca' || o.hora_fim_pesagem != null,
-  )
-  @Matches(HORA_REGEX)
-  hora_fim_pesagem?: string;
+  // hora_inicio_pesagem e hora_fim_pesagem não são aceitos do cliente: o servidor os
+  // registra no primeiro POST /gados do negócio e em PATCH /negocios/:id/concluir.
 
   @ApiProperty({ enum: ['arroba', 'kg', 'cabeca'] })
   @IsIn(['arroba', 'kg', 'cabeca'])
@@ -72,16 +44,8 @@ export class CreateNegocioDto {
   @IsIn(['Vaca', 'Boi', 'Novilha', 'Garrote', 'Bezerro', 'Variados'])
   tipo_lote: string;
 
-  // TODO: confirmar domínio de valores válidos com o responsável pelo projeto
-  @ApiProperty({
-    maxLength: 10,
-    description:
-      'TODO: domínio de valores válidos ainda não confirmado com o responsável pelo projeto.',
-  })
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(10)
-  tipo_precificacao: string;
+  // tipo_precificacao foi removido do contrato (redundante com `modalidade`); o
+  // service grava um placeholder enquanto a coluna NOT NULL existir no banco.
 
   @ApiProperty({ example: '2026-09-09T00:00:00.000Z' })
   @IsDateString()

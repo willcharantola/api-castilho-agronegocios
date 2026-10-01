@@ -3,12 +3,14 @@ import {
   Controller,
   Delete,
   Get,
+  Headers,
   Param,
   ParseIntPipe,
   Patch,
   Post,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiHeader, ApiTags } from '@nestjs/swagger';
+import { FUSO_HEADER } from '../common/time.util';
 import { CreateGadoDto } from './dto/create-gado.dto';
 import { UpdateGadoDto } from './dto/update-gado.dto';
 import { GadosService } from './gados.service';
@@ -19,9 +21,17 @@ import { GadosService } from './gados.service';
 export class GadosController {
   constructor(private readonly gadosService: GadosService) {}
 
+  @ApiHeader({
+    name: FUSO_HEADER,
+    required: false,
+    description: 'Fuso IANA do cliente (ex.: America/Cuiaba) para registrar a hora local.',
+  })
   @Post()
-  create(@Body() dto: CreateGadoDto) {
-    return this.gadosService.create(dto);
+  create(
+    @Body() dto: CreateGadoDto,
+    @Headers(FUSO_HEADER) fuso?: string,
+  ) {
+    return this.gadosService.create(dto, fuso);
   }
 
   @Get()

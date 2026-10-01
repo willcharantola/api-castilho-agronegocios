@@ -2,8 +2,8 @@ import { ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import { IsInt, IsNumber, IsOptional, Min } from 'class-validator';
 import { CreateNegocioDto } from './create-negocio.dto';
 
-// PartialType já aplica @IsOptional() a todos os campos herdados — inclusive
-// hora_inicio_pesagem/hora_fim_pesagem, opcionais no banco.
+// PartialType já aplica @IsOptional() a todos os campos herdados. Os horários de
+// pesagem não são editáveis por aqui — são registrados pelo servidor.
 export class UpdateNegocioDto extends PartialType(CreateNegocioDto) {
   @ApiPropertyOptional({
     minimum: 1,
