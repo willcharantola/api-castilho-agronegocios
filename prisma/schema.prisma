@@ -2,11 +2,15 @@
 // Re-executado em 2026-09-29: hora_inicio_pesagem, hora_fim_pesagem, mais_pesado,
 // mais_leve e valor_medio de `negocio` passaram a aceitar NULL (não se aplicam à
 // modalidade "cabeca", que não tem pesagem individual).
+// Re-executado em 2026-10-02: negocio.tipo_precificacao removida; negocio.porcentagem_comissao
+// adicionada (comissao passa a ser o valor em R$ calculado a partir dela); gado.horario_pesagem
+// passou a ser NOT NULL (sempre preenchido pelo servidor).
 // CHECK constraints existentes no banco não são representadas aqui (Prisma não suporta
 // check constraints nativamente) — continuam sendo validadas via class-validator nos DTOs:
 //   - gado.genero: "Macho" | "Femea"
 //   - gado.rendimento_carcaca: entre 0 e 100
 //   - negocio.modalidade: "arroba" | "kg" | "cabeca"
+//   - negocio.porcentagem_comissao: entre 0 e 100
 //   - negocio.tipo_gado: "Gordo" | "Magro"
 //   - negocio.tipo_lote: "Vaca" | "Boi" | "Novilha" | "Garrote" | "Bezerro" | "Variados"
 //   - usuario.nivel_acesso: "Admin" | "Normal"
@@ -78,50 +82,50 @@ model vendedor {
 }
 
 model negocio {
-  negocio_id          Int       @id @default(autoincrement())
-  empresa_id          Int
-  fazenda_id          Int
-  comprador_id        Int
-  vendedor_id         Int
-  hora_inicio_pesagem DateTime? @db.Time(6)
-  hora_fim_pesagem    DateTime? @db.Time(6)
-  valor_total         Decimal   @db.Decimal(15, 2)
-  valor_medio         Decimal?  @db.Decimal(15, 2)
-  qtd_animais         Int
-  modalidade          String    @db.VarChar(6)
-  tipo_gado           String    @db.VarChar(5)
-  tipo_lote           String    @db.VarChar(8)
-  valor_unidade       Decimal   @db.Decimal(15, 2)
-  mais_pesado         Decimal?  @db.Decimal(15, 2)
-  mais_leve           Decimal?  @db.Decimal(15, 2)
-  tipo_precificacao   String    @db.VarChar(10)
-  data_negocio        DateTime  @db.Timestamp(6)
-  comissao            Decimal?  @db.Decimal(15, 2)
-  observacao          String?   @db.VarChar(100)
-  gados               gado[]
-  comprador           comprador @relation(fields: [comprador_id], references: [comprador_id], onDelete: NoAction, onUpdate: NoAction)
-  empresa             empresa   @relation(fields: [empresa_id], references: [empresa_id], onDelete: NoAction, onUpdate: NoAction)
-  fazenda             fazenda   @relation(fields: [fazenda_id], references: [fazenda_id], onDelete: NoAction, onUpdate: NoAction)
-  vendedor            vendedor  @relation(fields: [vendedor_id], references: [vendedor_id], onDelete: NoAction, onUpdate: NoAction)
+  negocio_id           Int       @id @default(autoincrement())
+  empresa_id           Int
+  fazenda_id           Int
+  comprador_id         Int
+  vendedor_id          Int
+  hora_inicio_pesagem  DateTime? @db.Time(6)
+  hora_fim_pesagem     DateTime? @db.Time(6)
+  valor_total          Decimal   @db.Decimal(15, 2)
+  valor_medio          Decimal?  @db.Decimal(15, 2)
+  qtd_animais          Int
+  modalidade           String    @db.VarChar(6)
+  tipo_gado            String    @db.VarChar(5)
+  tipo_lote            String    @db.VarChar(8)
+  valor_unidade        Decimal   @db.Decimal(15, 2)
+  mais_pesado          Decimal?  @db.Decimal(15, 2)
+  mais_leve            Decimal?  @db.Decimal(15, 2)
+  data_negocio         DateTime  @db.Timestamp(6)
+  porcentagem_comissao Decimal?  @db.Decimal(5, 2)
+  comissao             Decimal?  @db.Decimal(15, 2)
+  observacao           String?   @db.VarChar(100)
+  gados                gado[]
+  comprador            comprador @relation(fields: [comprador_id], references: [comprador_id], onDelete: NoAction, onUpdate: NoAction)
+  empresa              empresa   @relation(fields: [empresa_id], references: [empresa_id], onDelete: NoAction, onUpdate: NoAction)
+  fazenda              fazenda   @relation(fields: [fazenda_id], references: [fazenda_id], onDelete: NoAction, onUpdate: NoAction)
+  vendedor             vendedor  @relation(fields: [vendedor_id], references: [vendedor_id], onDelete: NoAction, onUpdate: NoAction)
 
   @@map("negocio")
 }
 
 model gado {
-  gado_id            Int       @id @default(autoincrement())
+  gado_id            Int      @id @default(autoincrement())
   negocio_id         Int
-  rendimento_carcaca Decimal   @db.Decimal(5, 2)
-  horario_pesagem    DateTime? @db.Time(6)
-  valor_total        Decimal   @db.Decimal(15, 2)
-  peso_arroba        Decimal   @db.Decimal(15, 2)
-  peso_calculo       Decimal   @db.Decimal(15, 2)
-  peso_total         Decimal   @db.Decimal(15, 2)
-  data_pesagem       DateTime  @db.Timestamp(6)
-  genero             String    @db.VarChar(6)
-  denominacao        String    @db.VarChar(20)
+  rendimento_carcaca Decimal  @db.Decimal(5, 2)
+  horario_pesagem    DateTime @db.Time(6)
+  valor_total        Decimal  @db.Decimal(15, 2)
+  peso_arroba        Decimal  @db.Decimal(15, 2)
+  peso_calculo       Decimal  @db.Decimal(15, 2)
+  peso_total         Decimal  @db.Decimal(15, 2)
+  data_pesagem       DateTime @db.Timestamp(6)
+  genero             String   @db.VarChar(6)
+  denominacao        String   @db.VarChar(20)
   carimbo            Int
-  ano_carimbo        String    @db.VarChar(4)
-  negocio            negocio   @relation(fields: [negocio_id], references: [negocio_id], onDelete: NoAction, onUpdate: NoAction)
+  ano_carimbo        String   @db.VarChar(4)
+  negocio            negocio  @relation(fields: [negocio_id], references: [negocio_id], onDelete: NoAction, onUpdate: NoAction)
 
   @@map("gado")
 }

@@ -6,6 +6,7 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  Max,
   MaxLength,
   Min,
 } from 'class-validator';
@@ -44,18 +45,22 @@ export class CreateNegocioDto {
   @IsIn(['Vaca', 'Boi', 'Novilha', 'Garrote', 'Bezerro', 'Variados'])
   tipo_lote: string;
 
-  // tipo_precificacao foi removido do contrato (redundante com `modalidade`); o
-  // service grava um placeholder enquanto a coluna NOT NULL existir no banco.
-
   @ApiProperty({ example: '2026-09-09T00:00:00.000Z' })
   @IsDateString()
   data_negocio: string;
 
-  @ApiPropertyOptional({ minimum: 0 })
+  @ApiPropertyOptional({
+    minimum: 0,
+    maximum: 100,
+    description:
+      'Percentual de comissão (0 a 100). Editável depois via PATCH /negocios/:id. ' +
+      'O valor em R$ (`comissao`) é calculado pela API: valor_total × percentual / 100.',
+  })
   @IsOptional()
   @IsNumber()
   @Min(0)
-  comissao?: number;
+  @Max(100)
+  porcentagem_comissao?: number;
 
   @ApiProperty({
     minimum: 0,
@@ -73,5 +78,6 @@ export class CreateNegocioDto {
 
   // valor_total, valor_medio, qtd_animais, mais_pesado e mais_leve são agregados
   // calculados no backend a partir dos gados do negócio — não fazem parte do DTO.
+  // comissao (R$) também é calculada no backend, a partir de porcentagem_comissao.
   // valor_medio, mais_pesado e mais_leve ficam NULL na modalidade "cabeca".
 }
