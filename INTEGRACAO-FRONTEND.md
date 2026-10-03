@@ -158,7 +158,7 @@ Campos enviados pelo front no `POST`/`PATCH`:
 `empresa_id`, `fazenda_id`, `marchante`, `comprador`, `modalidade` (`"arroba"` | `"kg"` | `"cabeca"`),
 `tipo_gado` (`"Gordo"` | `"Magro"`), `tipo_lote` (`"Vaca"` | `"Boi"` | `"Novilha"` | `"Garrote"` |
 `"Bezerro"` | `"Variados"`),
-`rendimento_carcaca` (número, 0–100), `data_negocio` (ISO 8601), `comissao`, `valor_arroba`,
+`rendimento_carcaca` (número, 0–100), `data_negocio` (ISO 8601), `porcentagem_comissao` (percentual, 0–100), `valor_arroba`,
 `observacao`.
 
 Campos que **a API calcula sozinha e retorna, mas o front não envia**: `negocio_id`, `valor_total`,
@@ -172,8 +172,9 @@ Os horários são a **hora local do cliente**: o front envia o fuso do aparelho 
 `X-Fuso-Horario` (ex.: `America/Cuiaba`) e a API converte o instante do servidor para esse fuso
 (sem header ou com fuso inválido, usa `America/Sao_Paulo`).
 
-`tipo_precificacao` foi removido do contrato; a API grava `"N/A"` provisoriamente até a coluna
-ser removida do banco.
+`comissao` (R$) é calculada pela API — `valor_total × porcentagem_comissao / 100` — e recalculada
+quando o percentual (via `PATCH /negocios/:id`) ou o valor total do negócio mudam. Fica `null`
+enquanto não houver percentual definido.
 
 **Modalidade `"cabeca"`** (sem pesagem individual): nenhum `gado` é cadastrado, então
 `hora_inicio_pesagem` e `hora_fim_pesagem` ficam `null`; `valor_medio`,

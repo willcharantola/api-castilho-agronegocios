@@ -10,6 +10,11 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateNegocioDto } from './dto/create-negocio.dto';
 import { UpdateNegocioDto } from './dto/update-negocio.dto';
 
+/** Valor da comissão em R$, arredondado a centavos (coluna Decimal(15, 2)). */
+function calcularComissao(valorTotal: number, porcentagem: number) {
+  return Math.round(valorTotal * porcentagem) / 100;
+}
+
 @Injectable()
 export class NegociosService {
   constructor(private readonly prisma: PrismaService) {}
@@ -23,8 +28,9 @@ export class NegociosService {
         data: {
           ...dto,
           data_negocio: new Date(dto.data_negocio),
-          // TODO: remover esta coluna via migration (DROP COLUMN tipo_precificacao) assim que houver acesso ao banco; até lá, mantém-se este valor fixo apenas para satisfazer a restrição NOT NULL
-          tipo_precificacao: 'N/A',
+          // Ainda não há gados (valor_total = 0), então a comissão em R$ começa em 0
+          // e é recalculada por recalcularAgregados() conforme o valor total muda.
+          comissao: dto.porcentagem_comissao != null ? 0 : null,
           // Preenchidos pelo servidor: hora_inicio_pesagem no primeiro gado cadastrado
           // (GadosService.create) e hora_fim_pesagem ao concluir o cadastro (concluir()).
           hora_inicio_pesagem: null,
@@ -99,12 +105,25 @@ export class NegociosService {
       valorTotalPorCabeca = { valor_total: qtd * valorUnidade };
     }
 
+    // comissao (R$) = valor_total × porcentagem_comissao / 100, recalculada quando o
+    // percentual ou o valor total mudam. Sem percentual definido, não é tocada.
+    const porcentagem =
+      campos.porcentagem_comissao ?? atual.porcentagem_comissao?.toNumber();
+    const valorTotal =
+      valorTotalPorCabeca?.valor_total ?? atual.valor_total.toNumber();
+    const comissao =
+      porcentagem != null &&
+      (campos.porcentagem_comissao !== undefined || valorTotalPorCabeca)
+        ? { comissao: calcularComissao(valorTotal, porcentagem) }
+        : {};
+
     try {
       return await this.prisma.negocio.update({
         where: { negocio_id: negocioId },
         data: {
           ...campos,
           ...valorTotalPorCabeca,
+          ...comissao,
           ...(campos.data_negocio
             ? { data_negocio: new Date(campos.data_negocio) }
             : {}),
@@ -163,6 +182,11 @@ export class NegociosService {
     const gados = await this.prisma.gado.findMany({
       where: { negocio_id: negocioId },
     });
+    const negocio = await this.prisma.negocio.findUnique({
+      where: { negocio_id: negocioId },
+      select: { porcentagem_comissao: true },
+    });
+    const porcentagem = negocio?.porcentagem_comissao?.toNumber();
 
     const qtd_animais = gados.length;
     const valorTotal = gados.reduce(
@@ -182,6 +206,9 @@ export class NegociosService {
         valor_medio: valorMedio,
         mais_pesado: maisPesado,
         mais_leve: maisLeve,
+        ...(porcentagem != null
+          ? { comissao: calcularComissao(valorTotal, porcentagem) }
+          : {}),
       },
     });
   }
