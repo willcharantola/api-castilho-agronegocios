@@ -26,11 +26,17 @@ export class CreateFazendaDto {
   @MaxLength(12)
   inscricao_estadual: string;
 
-  @ApiPropertyOptional({ maxLength: 500 })
+  @ApiPropertyOptional({
+    maxLength: 500,
+    nullable: true,
+    description:
+      'URL pública da marca (logo), obtida em POST /uploads/marca-fazenda (finalUrl). ' +
+      'Só aceita imagens do bucket da Castilho. `null` remove a imagem.',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(500)
-  marca_url?: string;
+  marca_url?: string | null;
 
   @ApiPropertyOptional({ maxLength: 10 })
   @IsOptional()
