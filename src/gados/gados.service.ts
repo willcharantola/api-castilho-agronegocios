@@ -4,7 +4,8 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { handlePrismaError } from '../common/prisma-error.util';
-import { horaAtual } from '../common/time.util';
+import { criarIdempotente } from '../common/idempotencia.util';
+import { horaAtual, horaParaDate } from '../common/time.util';
 import { NegociosService } from '../negocios/negocios.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateGadoDto } from './dto/create-gado.dto';
@@ -39,7 +40,8 @@ export class GadosService {
     switch (modalidade) {
       case 'arroba': {
         const peso_calculo = pesoTotal * (rendimentoCarcaca / 100);
-        const peso_arroba = Math.ceil(peso_calculo / 15);
+        // Valor exato, sem arredondamento (a pedido do cliente).
+        const peso_arroba = peso_calculo / 15;
         const valor_total = peso_arroba * valorUnidade;
         return { peso_calculo, peso_arroba, valor_total };
       }
@@ -98,23 +100,36 @@ export class GadosService {
       negocio.valorUnidade,
     );
 
-    let gado;
-    try {
-      gado = await this.prisma.gado.create({
-        data: {
-          ...dto,
-          data_pesagem: new Date(dto.data_pesagem),
-          // Hora local do cliente no momento do cadastro (instante do servidor, fuso do cliente).
-          horario_pesagem: horaAtual(fuso),
-          ...valores,
-        },
-      });
-    } catch (error) {
-      handlePrismaError(error);
-    }
+    // Online: hora local do cliente no momento do cadastro (instante do servidor, fuso do
+    // cliente). Fila offline (uuid_origem): a hora capturada no aparelho na pesagem, já
+    // que a sincronização pode acontecer horas depois.
+    const { horario_pesagem: horarioInformado, ...dados } = dto;
+    const horarioPesagem =
+      dto.uuid_origem && horarioInformado
+        ? horaParaDate(horarioInformado)
+        : horaAtual(fuso);
+
+    const { registro: gado, existente } = await criarIdempotente(
+      dto.uuid_origem,
+      (uuid_origem) => this.prisma.gado.findUnique({ where: { uuid_origem } }),
+      () =>
+        this.prisma.gado.create({
+          data: {
+            ...dados,
+            data_pesagem: new Date(dto.data_pesagem),
+            horario_pesagem: horarioPesagem,
+            ...valores,
+          },
+        }),
+    );
+    // Reenvio de um gado já sincronizado: nada mudou no negócio.
+    if (existente) return gado;
 
     // Primeiro gado do negócio marca o início da pesagem (no-op nos seguintes).
-    await this.negociosService.registrarInicioPesagem(dto.negocio_id, fuso);
+    await this.negociosService.registrarInicioPesagem(
+      dto.negocio_id,
+      horarioPesagem,
+    );
     await this.negociosService.recalcularAgregados(dto.negocio_id);
     return gado;
   }

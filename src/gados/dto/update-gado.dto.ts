@@ -1,4 +1,7 @@
-import { PartialType } from '@nestjs/swagger';
+import { OmitType, PartialType } from '@nestjs/swagger';
 import { CreateGadoDto } from './create-gado.dto';
 
-export class UpdateGadoDto extends PartialType(CreateGadoDto) {}
+// uuid_origem e horario_pesagem só existem na criação (sincronização offline).
+export class UpdateGadoDto extends PartialType(
+  OmitType(CreateGadoDto, ['uuid_origem', 'horario_pesagem'] as const),
+) {}

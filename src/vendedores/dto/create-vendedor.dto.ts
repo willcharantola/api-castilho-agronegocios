@@ -6,6 +6,7 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
+  IsUUID,
   MaxLength,
 } from 'class-validator';
 
@@ -59,4 +60,14 @@ export class CreateVendedorDto {
   @IsArray()
   @IsInt({ each: true })
   fazenda_ids?: number[];
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      'Identificador gerado no aparelho para cadastros feitos offline. Reenvios com o mesmo ' +
+      'valor devolvem o registro já criado (idempotência da sincronização).',
+  })
+  @IsOptional()
+  @IsUUID()
+  uuid_origem?: string;
 }

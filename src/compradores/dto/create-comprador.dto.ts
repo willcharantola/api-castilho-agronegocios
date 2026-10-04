@@ -1,5 +1,11 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsNotEmpty, IsString, MaxLength } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import {
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  IsUUID,
+  MaxLength,
+} from 'class-validator';
 
 export class CreateCompradorDto {
   @ApiProperty({ maxLength: 50 })
@@ -31,4 +37,14 @@ export class CreateCompradorDto {
   @IsNotEmpty()
   @MaxLength(30)
   pessoa_contato: string;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      'Identificador gerado no aparelho para cadastros feitos offline. Reenvios com o mesmo ' +
+      'valor devolvem o registro já criado (idempotência da sincronização).',
+  })
+  @IsOptional()
+  @IsUUID()
+  uuid_origem?: string;
 }

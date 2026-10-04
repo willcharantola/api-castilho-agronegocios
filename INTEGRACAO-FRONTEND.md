@@ -222,3 +222,18 @@ Formato padrão de erro (Nest):
    necessário ali).
 5. Configure `FRONTEND_URL` no `.env` do backend com o domínio de produção da Vercel antes do
    deploy final.
+
+## Sincronização offline (PWA)
+
+Cadastros feitos sem internet ficam numa fila no aparelho (IndexedDB) e são enviados depois,
+na ordem fazenda → vendedor → comprador → negócio → atualização de negócio → gado → conclusão.
+
+- `uuid_origem` (opcional, UUID) nos `POST` de `/fazendas`, `/vendedores`, `/compradores`,
+  `/negocios` e `/gados`: se já existir um registro com esse valor, a API **devolve o existente**
+  em vez de criar outro (reenvio após uma resposta perdida não duplica). Não é editável via `PATCH`.
+  Requer as colunas criadas por `prisma/sql/2026-10-03-uuid-origem.sql`.
+- `POST /gados` com `uuid_origem` aceita `horario_pesagem` (`HH:mm` ou `HH:mm:ss`): a hora local
+  em que o gado foi pesado no aparelho. Sem `uuid_origem`, o campo é ignorado e vale a hora do
+  servidor. O primeiro gado do negócio define `hora_inicio_pesagem` com esse mesmo horário.
+- `PATCH /negocios/:id/concluir` aceita no corpo `{ "hora_fim_pesagem": "HH:mm:ss" }` (hora da
+  conclusão no aparelho, enviada pela fila offline). Corpo vazio: hora do servidor, como antes.

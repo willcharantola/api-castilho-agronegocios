@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { criarIdempotente } from '../common/idempotencia.util';
 import { handlePrismaError } from '../common/prisma-error.util';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateVendedorDto } from './dto/create-vendedor.dto';
@@ -17,19 +18,25 @@ export class VendedoresService {
 
   async create(dto: CreateVendedorDto) {
     const { fazenda_ids, ...dados } = dto;
-    try {
-      return await this.prisma.vendedor.create({
-        data: {
-          ...dados,
-          ...(fazenda_ids?.length
-            ? { vendedor_fazenda: { create: paraAssociacoes(fazenda_ids) } }
-            : {}),
-        },
-        include: INCLUDE_FAZENDAS,
-      });
-    } catch (error) {
-      handlePrismaError(error);
-    }
+    const { registro } = await criarIdempotente(
+      dto.uuid_origem,
+      (uuid_origem) =>
+        this.prisma.vendedor.findUnique({
+          where: { uuid_origem },
+          include: INCLUDE_FAZENDAS,
+        }),
+      () =>
+        this.prisma.vendedor.create({
+          data: {
+            ...dados,
+            ...(fazenda_ids?.length
+              ? { vendedor_fazenda: { create: paraAssociacoes(fazenda_ids) } }
+              : {}),
+          },
+          include: INCLUDE_FAZENDAS,
+        }),
+    );
+    return registro;
   }
 
   findAll() {

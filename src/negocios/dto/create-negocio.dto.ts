@@ -6,6 +6,7 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  IsUUID,
   Max,
   MaxLength,
   Min,
@@ -80,4 +81,14 @@ export class CreateNegocioDto {
   // calculados no backend a partir dos gados do negócio — não fazem parte do DTO.
   // comissao (R$) também é calculada no backend, a partir de porcentagem_comissao.
   // valor_medio, mais_pesado e mais_leve ficam NULL na modalidade "cabeca".
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      'Identificador gerado no aparelho para cadastros feitos offline. Reenvios com o mesmo ' +
+      'valor devolvem o registro já criado (idempotência da sincronização).',
+  })
+  @IsOptional()
+  @IsUUID()
+  uuid_origem?: string;
 }

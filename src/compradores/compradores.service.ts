@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { criarIdempotente } from '../common/idempotencia.util';
 import { handlePrismaError } from '../common/prisma-error.util';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateCompradorDto } from './dto/create-comprador.dto';
@@ -9,11 +10,13 @@ export class CompradoresService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(dto: CreateCompradorDto) {
-    try {
-      return await this.prisma.comprador.create({ data: dto });
-    } catch (error) {
-      handlePrismaError(error);
-    }
+    const { registro } = await criarIdempotente(
+      dto.uuid_origem,
+      (uuid_origem) =>
+        this.prisma.comprador.findUnique({ where: { uuid_origem } }),
+      () => this.prisma.comprador.create({ data: dto }),
+    );
+    return registro;
   }
 
   findAll() {
