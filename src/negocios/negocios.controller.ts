@@ -10,14 +10,10 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
-import {
-  ApiBearerAuth,
-  ApiHeader,
-  ApiQuery,
-  ApiTags,
-} from '@nestjs/swagger';
+import { ApiBearerAuth, ApiHeader, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { FUSO_HEADER } from '../common/time.util';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { ConcluirNegocioDto } from './dto/concluir-negocio.dto';
 import { CreateNegocioDto } from './dto/create-negocio.dto';
 import { FindNegociosQueryDto } from './dto/find-negocios-query.dto';
 import { UpdateNegocioDto } from './dto/update-negocio.dto';
@@ -60,14 +56,16 @@ export class NegociosController {
   @ApiHeader({
     name: FUSO_HEADER,
     required: false,
-    description: 'Fuso IANA do cliente (ex.: America/Cuiaba) para registrar a hora local.',
+    description:
+      'Fuso IANA do cliente (ex.: America/Cuiaba) para registrar a hora local.',
   })
   @Patch(':id/concluir')
   concluir(
     @Param('id', ParseIntPipe) id: number,
+    @Body() dto: ConcluirNegocioDto,
     @Headers(FUSO_HEADER) fuso?: string,
   ) {
-    return this.negociosService.concluir(id, fuso);
+    return this.negociosService.concluir(id, fuso, dto.hora_fim_pesagem);
   }
 
   // Exclusão de negócios é uma ação sensível: restrita a nivel_acesso "Admin".

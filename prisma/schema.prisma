@@ -5,6 +5,9 @@
 // Re-executado em 2026-10-02: negocio.tipo_precificacao removida; negocio.porcentagem_comissao
 // adicionada (comissao passa a ser o valor em R$ calculado a partir dela); gado.horario_pesagem
 // passou a ser NOT NULL (sempre preenchido pelo servidor).
+// 2026-10-03: uuid_origem (opcional, único) em fazenda, vendedor, comprador, negocio e gado —
+// idempotência da sincronização offline. Adicionada à mão aqui, espelhando
+// prisma/sql/2026-10-03-uuid-origem.sql; rodar `npx prisma db pull` depois de aplicar o SQL.
 // CHECK constraints existentes no banco não são representadas aqui (Prisma não suporta
 // check constraints nativamente) — continuam sendo validadas via class-validator nos DTOs:
 //   - gado.genero: "Macho" | "Femea"
@@ -55,6 +58,7 @@ model usuario {
 
 model fazenda {
   fazenda_id         Int                @id @default(autoincrement())
+  uuid_origem        String?            @unique @db.Uuid
   nome_fazenda       String             @db.VarChar(50)
   municipio          String             @db.VarChar(20)
   inscricao_estadual String             @db.VarChar(12)
@@ -68,6 +72,7 @@ model fazenda {
 
 model vendedor {
   vendedor_id      Int                @id @default(autoincrement())
+  uuid_origem      String?            @unique @db.Uuid
   nome_vendedor    String             @db.VarChar(50)
   fisico_juridico  String             @db.VarChar(8)
   cpf_cnpj         String             @db.VarChar(20)
@@ -83,6 +88,7 @@ model vendedor {
 
 model negocio {
   negocio_id           Int       @id @default(autoincrement())
+  uuid_origem          String?   @unique @db.Uuid
   empresa_id           Int
   fazenda_id           Int
   comprador_id         Int
@@ -113,6 +119,7 @@ model negocio {
 
 model gado {
   gado_id            Int      @id @default(autoincrement())
+  uuid_origem        String?  @unique @db.Uuid
   negocio_id         Int
   rendimento_carcaca Decimal  @db.Decimal(5, 2)
   horario_pesagem    DateTime @db.Time(6)
@@ -132,6 +139,7 @@ model gado {
 
 model comprador {
   comprador_id   Int       @id @default(autoincrement())
+  uuid_origem    String?   @unique @db.Uuid
   nome_empresa   String    @db.VarChar(50)
   cnpj           String    @db.VarChar(18)
   telefone       String    @db.VarChar(13)

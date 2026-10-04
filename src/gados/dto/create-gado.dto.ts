@@ -1,16 +1,20 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsDateString,
   IsIn,
   IsInt,
   IsNotEmpty,
   IsNumber,
+  IsOptional,
   IsString,
+  IsUUID,
   Matches,
   Max,
   MaxLength,
   Min,
+  ValidateIf,
 } from 'class-validator';
+import { HORA_REGEX } from '../../common/time.util';
 
 export class CreateGadoDto {
   @ApiProperty()
@@ -36,7 +40,18 @@ export class CreateGadoDto {
   @IsDateString()
   data_pesagem: string;
 
-  // horario_pesagem não é aceito do cliente: registrado pelo servidor no cadastro.
+  // Online, horario_pesagem é registrado pelo servidor. Só cadastros vindos da fila
+  // offline (com uuid_origem) podem informá-lo: a hora local em que o gado foi pesado
+  // no aparelho, já que a sincronização pode acontecer horas depois.
+  @ApiPropertyOptional({
+    example: '14:05:30',
+    description:
+      'Somente com uuid_origem (sincronização offline): hora local da pesagem no aparelho, ' +
+      'HH:mm ou HH:mm:ss. Ignorado em cadastros online.',
+  })
+  @ValidateIf((o: CreateGadoDto) => o.horario_pesagem != null)
+  @Matches(HORA_REGEX)
+  horario_pesagem?: string;
 
   @ApiProperty({ enum: ['Macho', 'Femea'] })
   @IsIn(['Macho', 'Femea'])
@@ -61,4 +76,14 @@ export class CreateGadoDto {
 
   // peso_calculo, peso_arroba e valor_total são calculados no backend a partir de
   // peso_total e do rendimento_carcaca do próprio gado — não fazem parte do DTO de entrada.
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      'Identificador gerado no aparelho para cadastros feitos offline. Reenvios com o mesmo ' +
+      'valor devolvem o registro já criado (idempotência da sincronização).',
+  })
+  @IsOptional()
+  @IsUUID()
+  uuid_origem?: string;
 }

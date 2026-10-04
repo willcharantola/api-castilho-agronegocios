@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { criarIdempotente } from '../common/idempotencia.util';
 import { handlePrismaError } from '../common/prisma-error.util';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateFazendaDto } from './dto/create-fazenda.dto';
@@ -9,11 +10,13 @@ export class FazendasService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(dto: CreateFazendaDto) {
-    try {
-      return await this.prisma.fazenda.create({ data: dto });
-    } catch (error) {
-      handlePrismaError(error);
-    }
+    const { registro } = await criarIdempotente(
+      dto.uuid_origem,
+      (uuid_origem) =>
+        this.prisma.fazenda.findUnique({ where: { uuid_origem } }),
+      () => this.prisma.fazenda.create({ data: dto }),
+    );
+    return registro;
   }
 
   findAll() {

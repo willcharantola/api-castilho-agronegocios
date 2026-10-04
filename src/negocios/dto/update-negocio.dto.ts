@@ -1,10 +1,12 @@
-import { ApiPropertyOptional, PartialType } from '@nestjs/swagger';
+import { ApiPropertyOptional, OmitType, PartialType } from '@nestjs/swagger';
 import { IsInt, IsNumber, IsOptional, Min } from 'class-validator';
 import { CreateNegocioDto } from './create-negocio.dto';
 
 // PartialType já aplica @IsOptional() a todos os campos herdados. Os horários de
 // pesagem não são editáveis por aqui — são registrados pelo servidor.
-export class UpdateNegocioDto extends PartialType(CreateNegocioDto) {
+export class UpdateNegocioDto extends PartialType(
+  OmitType(CreateNegocioDto, ['uuid_origem'] as const),
+) {
   @ApiPropertyOptional({
     minimum: 1,
     description:

@@ -4,8 +4,9 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { criarIdempotente } from '../common/idempotencia.util';
 import { handlePrismaError } from '../common/prisma-error.util';
-import { horaAtual } from '../common/time.util';
+import { horaAtual, horaParaDate } from '../common/time.util';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateNegocioDto } from './dto/create-negocio.dto';
 import { UpdateNegocioDto } from './dto/update-negocio.dto';
@@ -23,30 +24,33 @@ export class NegociosService {
     // Na modalidade "cabeca" não há pesagem física: os agregados de peso ficam NULL
     // e qtd_animais/valor_total são informados depois via PATCH /negocios/:id.
     const porCabeca = dto.modalidade === 'cabeca';
-    try {
-      return await this.prisma.negocio.create({
-        data: {
-          ...dto,
-          data_negocio: new Date(dto.data_negocio),
-          // Ainda não há gados (valor_total = 0), então a comissão em R$ começa em 0
-          // e é recalculada por recalcularAgregados() conforme o valor total muda.
-          comissao: dto.porcentagem_comissao != null ? 0 : null,
-          // Preenchidos pelo servidor: hora_inicio_pesagem no primeiro gado cadastrado
-          // (GadosService.create) e hora_fim_pesagem ao concluir o cadastro (concluir()).
-          hora_inicio_pesagem: null,
-          hora_fim_pesagem: null,
-          // Agregados sobre os gados do negócio — recalculados por recalcularAgregados()
-          // conforme gados são criados/atualizados/removidos. Não existem gados ainda na criação.
-          valor_total: 0,
-          valor_medio: porCabeca ? null : 0,
-          qtd_animais: 0,
-          mais_pesado: porCabeca ? null : 0,
-          mais_leve: porCabeca ? null : 0,
-        },
-      });
-    } catch (error) {
-      handlePrismaError(error);
-    }
+    const { registro } = await criarIdempotente(
+      dto.uuid_origem,
+      (uuid_origem) =>
+        this.prisma.negocio.findUnique({ where: { uuid_origem } }),
+      () =>
+        this.prisma.negocio.create({
+          data: {
+            ...dto,
+            data_negocio: new Date(dto.data_negocio),
+            // Ainda não há gados (valor_total = 0), então a comissão em R$ começa em 0
+            // e é recalculada por recalcularAgregados() conforme o valor total muda.
+            comissao: dto.porcentagem_comissao != null ? 0 : null,
+            // Preenchidos pelo servidor: hora_inicio_pesagem no primeiro gado cadastrado
+            // (GadosService.create) e hora_fim_pesagem ao concluir o cadastro (concluir()).
+            hora_inicio_pesagem: null,
+            hora_fim_pesagem: null,
+            // Agregados sobre os gados do negócio — recalculados por recalcularAgregados()
+            // conforme gados são criados/atualizados/removidos. Não existem gados ainda na criação.
+            valor_total: 0,
+            valor_medio: porCabeca ? null : 0,
+            qtd_animais: 0,
+            mais_pesado: porCabeca ? null : 0,
+            mais_leve: porCabeca ? null : 0,
+          },
+        }),
+    );
+    return registro;
   }
 
   findAll(fazendaId?: number, dataInicio?: string, dataFim?: string) {
@@ -136,14 +140,17 @@ export class NegociosService {
 
   /**
    * Finaliza o cadastro do negócio (botão "Concluir" do fluxo de cadastro de gados):
-   * registra hora_fim_pesagem com a hora local do cliente (ver horaAtual).
+   * registra hora_fim_pesagem com a hora local do cliente (ver horaAtual), ou com a
+   * hora informada pela fila offline (`horaFim`, capturada no aparelho ao concluir).
    */
-  async concluir(negocioId: number, fuso?: string) {
+  async concluir(negocioId: number, fuso?: string, horaFim?: string) {
     await this.findOne(negocioId);
     try {
       return await this.prisma.negocio.update({
         where: { negocio_id: negocioId },
-        data: { hora_fim_pesagem: horaAtual(fuso) },
+        data: {
+          hora_fim_pesagem: horaFim ? horaParaDate(horaFim) : horaAtual(fuso),
+        },
       });
     } catch (error) {
       handlePrismaError(error);
@@ -153,12 +160,13 @@ export class NegociosService {
   /**
    * Registra hora_inicio_pesagem apenas se ainda estiver NULL — ou seja, só no
    * primeiro gado cadastrado no negócio. O filtro no próprio UPDATE torna a
-   * operação atômica: cadastros simultâneos não sobrescrevem o valor.
+   * operação atômica: cadastros simultâneos não sobrescrevem o valor. `horario` é o
+   * horario_pesagem do gado (hora do aparelho, quando veio da fila offline).
    */
-  async registrarInicioPesagem(negocioId: number, fuso?: string) {
+  async registrarInicioPesagem(negocioId: number, horario: Date) {
     await this.prisma.negocio.updateMany({
       where: { negocio_id: negocioId, hora_inicio_pesagem: null },
-      data: { hora_inicio_pesagem: horaAtual(fuso) },
+      data: { hora_inicio_pesagem: horario },
     });
   }
 
