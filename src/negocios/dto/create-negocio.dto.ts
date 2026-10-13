@@ -81,6 +81,9 @@ export class CreateNegocioDto {
   // calculados no backend a partir dos gados do negócio — não fazem parte do DTO.
   // comissao (R$) também é calculada no backend, a partir de porcentagem_comissao.
   // valor_medio, mais_pesado e mais_leve ficam NULL na modalidade "cabeca".
+  // Campos do romaneio (peso_total_quilos, peso_total_arroba, rendimento_medio,
+  // peso_medio_arroba, peso_medio_quilos, funrural, senar) também são calculados pela
+  // API e, fora do DTO, são rejeitados pelo forbidNonWhitelisted.
 
   @ApiPropertyOptional({
     format: 'uuid',
