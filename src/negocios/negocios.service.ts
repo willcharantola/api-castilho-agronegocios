@@ -16,6 +16,27 @@ function calcularComissao(valorTotal: number, porcentagem: number) {
   return Math.round(valorTotal * porcentagem) / 100;
 }
 
+// Alíquotas sobre o valor bruto do romaneio — percentuais ainda a confirmar com o cliente.
+const ALIQUOTA_FUNRURAL = 0.015;
+const ALIQUOTA_SENAR = 0.002;
+
+/** Valor em R$ arredondado a centavos (colunas Decimal(14, 2)). */
+function arredondarCentavos(valor: number) {
+  return Math.round(valor * 100) / 100;
+}
+
+/**
+ * Funrural e Senar (R$) a partir do valor_total — calcular sempre DEPOIS do
+ * valor_total. Sem valor_total (> 0), ficam NULL.
+ */
+function calcularContribuicoes(valorTotal: number) {
+  if (!(valorTotal > 0)) return { funrural: null, senar: null };
+  return {
+    funrural: arredondarCentavos(valorTotal * ALIQUOTA_FUNRURAL),
+    senar: arredondarCentavos(valorTotal * ALIQUOTA_SENAR),
+  };
+}
+
 @Injectable()
 export class NegociosService {
   constructor(private readonly prisma: PrismaService) {}
@@ -47,6 +68,8 @@ export class NegociosService {
             qtd_animais: 0,
             mais_pesado: porCabeca ? null : 0,
             mais_leve: porCabeca ? null : 0,
+            // Campos do romaneio (pesos, rendimento, funrural, senar) ficam NULL até
+            // haver gados / valor_total — preenchidos por recalcularAgregados() e update().
           },
         }),
     );
@@ -96,9 +119,12 @@ export class NegociosService {
     }
 
     // Modalidade "cabeca": valor_total = qtd_animais × valor_unidade, recalculado
-    // sempre que um dos dois muda. mais_pesado, mais_leve, valor_medio e os horários
-    // de pesagem não são tocados aqui (permanecem NULL).
-    let valorTotalPorCabeca: { valor_total: number } | undefined;
+    // sempre que um dos dois muda, junto com funrural e senar (dependem dele).
+    // mais_pesado, mais_leve, valor_medio, os horários de pesagem e os campos de
+    // peso/rendimento não são tocados aqui (permanecem NULL).
+    let valorTotalPorCabeca:
+      | ({ valor_total: number } & ReturnType<typeof calcularContribuicoes>)
+      | undefined;
     if (
       atual.modalidade === 'cabeca' &&
       (campos.qtd_animais !== undefined || campos.valor_unidade !== undefined)
@@ -106,7 +132,11 @@ export class NegociosService {
       const qtd = campos.qtd_animais ?? atual.qtd_animais;
       const valorUnidade =
         campos.valor_unidade ?? atual.valor_unidade.toNumber();
-      valorTotalPorCabeca = { valor_total: qtd * valorUnidade };
+      const valorTotalCabeca = qtd * valorUnidade;
+      valorTotalPorCabeca = {
+        valor_total: valorTotalCabeca,
+        ...calcularContribuicoes(valorTotalCabeca),
+      };
     }
 
     // comissao (R$) = valor_total × porcentagem_comissao / 100, recalculada quando o
@@ -183,41 +213,71 @@ export class NegociosService {
 
   /**
    * Recalcula os agregados do negócio (valor_total, valor_medio, qtd_animais,
-   * mais_pesado, mais_leve) a partir dos gados atualmente vinculados a ele.
+   * mais_pesado, mais_leve, comissao) e os campos do romaneio (pesos totais e
+   * médios, rendimento médio, funrural, senar) a partir dos gados atualmente
+   * vinculados a ele, numa única transação e num único UPDATE.
    * Chamado pelo GadosService sempre que um gado é criado, atualizado ou removido.
    */
   async recalcularAgregados(negocioId: number) {
-    const gados = await this.prisma.gado.findMany({
-      where: { negocio_id: negocioId },
-    });
-    const negocio = await this.prisma.negocio.findUnique({
-      where: { negocio_id: negocioId },
-      select: { porcentagem_comissao: true },
-    });
-    const porcentagem = negocio?.porcentagem_comissao?.toNumber();
+    await this.prisma.$transaction(async (tx) => {
+      const gados = await tx.gado.findMany({
+        where: { negocio_id: negocioId },
+      });
+      const negocio = await tx.negocio.findUnique({
+        where: { negocio_id: negocioId },
+        select: { porcentagem_comissao: true },
+      });
+      const porcentagem = negocio?.porcentagem_comissao?.toNumber();
 
-    const qtd_animais = gados.length;
-    const valorTotal = gados.reduce(
-      (soma, gado) => soma + gado.valor_total.toNumber(),
-      0,
-    );
-    const valorMedio = qtd_animais > 0 ? valorTotal / qtd_animais : 0;
-    const pesos = gados.map((gado) => gado.peso_total.toNumber());
-    const maisPesado = pesos.length > 0 ? Math.max(...pesos) : 0;
-    const maisLeve = pesos.length > 0 ? Math.min(...pesos) : 0;
+      const qtd_animais = gados.length;
+      const somar = (valor: (gado: (typeof gados)[number]) => number) =>
+        gados.reduce((soma, gado) => soma + valor(gado), 0);
 
-    await this.prisma.negocio.update({
-      where: { negocio_id: negocioId },
-      data: {
-        qtd_animais,
-        valor_total: valorTotal,
-        valor_medio: valorMedio,
-        mais_pesado: maisPesado,
-        mais_leve: maisLeve,
-        ...(porcentagem != null
-          ? { comissao: calcularComissao(valorTotal, porcentagem) }
-          : {}),
-      },
+      // valor_total primeiro: funrural e senar dependem dele.
+      const valorTotal = somar((gado) => gado.valor_total.toNumber());
+      const valorMedio = qtd_animais > 0 ? valorTotal / qtd_animais : 0;
+      const pesos = gados.map((gado) => gado.peso_total.toNumber());
+      const maisPesado = pesos.length > 0 ? Math.max(...pesos) : 0;
+      const maisLeve = pesos.length > 0 ? Math.min(...pesos) : 0;
+
+      // Campos do romaneio — sem arredondamento (exceto o da própria coluna). Sem
+      // gados, ficam NULL (nunca divide por zero).
+      const pesoTotalQuilos = somar((gado) => gado.peso_total.toNumber());
+      const pesoTotalArroba = somar((gado) => gado.peso_arroba.toNumber());
+      const camposRomaneio =
+        qtd_animais > 0
+          ? {
+              peso_total_quilos: pesoTotalQuilos,
+              peso_total_arroba: pesoTotalArroba,
+              rendimento_medio:
+                somar((gado) => gado.rendimento_carcaca.toNumber()) /
+                qtd_animais,
+              peso_medio_arroba: pesoTotalArroba / qtd_animais,
+              peso_medio_quilos: pesoTotalQuilos / qtd_animais,
+            }
+          : {
+              peso_total_quilos: null,
+              peso_total_arroba: null,
+              rendimento_medio: null,
+              peso_medio_arroba: null,
+              peso_medio_quilos: null,
+            };
+
+      await tx.negocio.update({
+        where: { negocio_id: negocioId },
+        data: {
+          qtd_animais,
+          valor_total: valorTotal,
+          valor_medio: valorMedio,
+          mais_pesado: maisPesado,
+          mais_leve: maisLeve,
+          ...(porcentagem != null
+            ? { comissao: calcularComissao(valorTotal, porcentagem) }
+            : {}),
+          ...camposRomaneio,
+          ...calcularContribuicoes(valorTotal),
+        },
+      });
     });
   }
 }
