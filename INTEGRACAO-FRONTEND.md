@@ -129,6 +129,7 @@ Base URL: `NEXT_PUBLIC_API_URL`. Todos exigem JWT exceto os marcados como **púb
 | Pecuaristas | `GET/POST /pecuaristas`, `GET/PATCH/DELETE /pecuaristas/:id` | — |
 | Negócios | `GET/POST /negocios`, `GET/PATCH /negocios/:id`, `PATCH /negocios/:id/concluir`, `DELETE /negocios/:id` | `DELETE` **exige `Admin`**. `GET /negocios/:id` inclui os `gados` do negócio. `GET /negocios` aceita `?fazenda_id=&data_inicio=&data_fim=` |
 | Gados | `GET/POST /gados`, `GET/PATCH/DELETE /gados/:id` | Cada gado pertence a um `negocio_id` |
+| Configurações | `GET /configuracoes/impostos`, `PATCH /configuracoes/impostos` | Alíquotas da empresa do usuário logado. `PATCH` **exige `Admin`** |
 
 A documentação interativa (Swagger) está em `${NEXT_PUBLIC_API_URL}/docs` — útil para explorar
 payloads exatos e testar chamadas com o botão "Authorize".
@@ -249,3 +250,13 @@ na ordem fazenda → pecuarista → comprador → negócio → atualização de 
   (outra empresa → 404). `empresa_id` vem do admin autenticado. `senha` no `PATCH` só se preenchida.
   E-mail duplicado → 409. Não é permitido excluir a própria conta nem excluir/rebaixar o último admin (400).
 - O token é validado contra o banco a cada requisição: usuário excluído → 401; mudança de nível vale na hora.
+
+## Impostos e taxas (Funrural e Senar)
+
+- `GET /configuracoes/impostos` → `{ aliquota_funrural, aliquota_senar }` (números, em %: `1.5` = 1,5%)
+  da empresa do usuário logado (`empresa_id` vem do token).
+- `PATCH /configuracoes/impostos` `{ aliquota_funrural, aliquota_senar }` — só `Admin` (senão 403);
+  ambos obrigatórios, de 0 a 100, até 2 casas decimais.
+- Ao criar um negócio, a API copia as alíquotas da empresa para `negocio.aliquota_funrural` /
+  `negocio.aliquota_senar` (não enviar no POST/PATCH). `funrural` e `senar` (R$) são sempre calculados
+  com as alíquotas gravadas no próprio negócio: mudar a configuração só afeta negócios novos.

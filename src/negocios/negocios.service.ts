@@ -16,9 +16,8 @@ function calcularComissao(valorTotal: number, porcentagem: number) {
   return Math.round(valorTotal * porcentagem) / 100;
 }
 
-// Alíquotas sobre o valor bruto do romaneio — percentuais ainda a confirmar com o cliente.
-const ALIQUOTA_FUNRURAL = 0.015;
-const ALIQUOTA_SENAR = 0.002;
+/** Alíquotas de Funrural e Senar em pontos percentuais (1.5 = 1,5%). */
+type Aliquotas = { aliquota_funrural: number; aliquota_senar: number };
 
 /** Valor em R$ arredondado a centavos (colunas Decimal(14, 2)). */
 function arredondarCentavos(valor: number) {
@@ -26,16 +25,23 @@ function arredondarCentavos(valor: number) {
 }
 
 /**
- * Funrural e Senar (R$) a partir do valor_total — calcular sempre DEPOIS do
- * valor_total. Sem valor_total (> 0), ficam NULL.
+ * Funrural e Senar (R$) a partir do valor_total e das alíquotas gravadas no próprio
+ * negócio — calcular sempre DEPOIS do valor_total. Sem valor_total (> 0), ficam NULL.
  */
-function calcularContribuicoes(valorTotal: number) {
+function calcularContribuicoes(valorTotal: number, aliquotas: Aliquotas) {
   if (!(valorTotal > 0)) return { funrural: null, senar: null };
   return {
-    funrural: arredondarCentavos(valorTotal * ALIQUOTA_FUNRURAL),
-    senar: arredondarCentavos(valorTotal * ALIQUOTA_SENAR),
+    funrural: arredondarCentavos(
+      (valorTotal * aliquotas.aliquota_funrural) / 100,
+    ),
+    senar: arredondarCentavos((valorTotal * aliquotas.aliquota_senar) / 100),
   };
 }
+
+const SELECT_ALIQUOTAS = {
+  aliquota_funrural: true,
+  aliquota_senar: true,
+} as const;
 
 @Injectable()
 export class NegociosService {
@@ -49,10 +55,13 @@ export class NegociosService {
       dto.uuid_origem,
       (uuid_origem) =>
         this.prisma.negocio.findUnique({ where: { uuid_origem } }),
-      () =>
+      async () =>
         this.prisma.negocio.create({
           data: {
             ...dto,
+            // Alíquotas vigentes na empresa no momento da criação: mudanças posteriores
+            // na configuração não alteram os negócios já existentes.
+            ...(await this.aliquotasDaEmpresa(this.prisma, dto.empresa_id)),
             data_negocio: new Date(dto.data_negocio),
             // Ainda não há gados (valor_total = 0), então a comissão em R$ começa em 0
             // e é recalculada por recalcularAgregados() conforme o valor total muda.
@@ -128,7 +137,8 @@ export class NegociosService {
     // mais_pesado, mais_leve, valor_medio, os horários de pesagem e os campos de
     // peso/rendimento não são tocados aqui (permanecem NULL).
     let valorTotalPorCabeca:
-      | ({ valor_total: number } & ReturnType<typeof calcularContribuicoes>)
+      | ({ valor_total: number } & Aliquotas &
+          ReturnType<typeof calcularContribuicoes>)
       | undefined;
     if (
       atual.modalidade === 'cabeca' &&
@@ -138,9 +148,11 @@ export class NegociosService {
       const valorUnidade =
         campos.valor_unidade ?? atual.valor_unidade.toNumber();
       const valorTotalCabeca = qtd * valorUnidade;
+      const aliquotas = await this.aliquotasDoNegocio(this.prisma, atual);
       valorTotalPorCabeca = {
         valor_total: valorTotalCabeca,
-        ...calcularContribuicoes(valorTotalCabeca),
+        ...aliquotas,
+        ...calcularContribuicoes(valorTotalCabeca, aliquotas),
       };
     }
 
@@ -228,11 +240,16 @@ export class NegociosService {
       const gados = await tx.gado.findMany({
         where: { negocio_id: negocioId },
       });
-      const negocio = await tx.negocio.findUnique({
+      const negocio = await tx.negocio.findUniqueOrThrow({
         where: { negocio_id: negocioId },
-        select: { porcentagem_comissao: true },
+        select: {
+          porcentagem_comissao: true,
+          empresa_id: true,
+          ...SELECT_ALIQUOTAS,
+        },
       });
-      const porcentagem = negocio?.porcentagem_comissao?.toNumber();
+      const porcentagem = negocio.porcentagem_comissao?.toNumber();
+      const aliquotas = await this.aliquotasDoNegocio(tx, negocio);
 
       const qtd_animais = gados.length;
       const somar = (valor: (gado: (typeof gados)[number]) => number) =>
@@ -280,9 +297,45 @@ export class NegociosService {
             ? { comissao: calcularComissao(valorTotal, porcentagem) }
             : {}),
           ...camposRomaneio,
-          ...calcularContribuicoes(valorTotal),
+          ...aliquotas,
+          ...calcularContribuicoes(valorTotal, aliquotas),
         },
       });
     });
+  }
+
+  private async aliquotasDaEmpresa(
+    db: Prisma.TransactionClient,
+    empresaId: number,
+  ): Promise<Aliquotas> {
+    const empresa = await db.empresa.findUniqueOrThrow({
+      where: { empresa_id: empresaId },
+      select: SELECT_ALIQUOTAS,
+    });
+    return {
+      aliquota_funrural: empresa.aliquota_funrural.toNumber(),
+      aliquota_senar: empresa.aliquota_senar.toNumber(),
+    };
+  }
+
+  /**
+   * Alíquotas gravadas no negócio. Negócios antigos sem elas (NULL) passam a usar as
+   * da empresa — quem chama grava o resultado junto com funrural/senar.
+   */
+  private async aliquotasDoNegocio(
+    db: Prisma.TransactionClient,
+    negocio: {
+      empresa_id: number;
+      aliquota_funrural: Prisma.Decimal | null;
+      aliquota_senar: Prisma.Decimal | null;
+    },
+  ): Promise<Aliquotas> {
+    if (negocio.aliquota_funrural === null || negocio.aliquota_senar === null) {
+      return this.aliquotasDaEmpresa(db, negocio.empresa_id);
+    }
+    return {
+      aliquota_funrural: negocio.aliquota_funrural.toNumber(),
+      aliquota_senar: negocio.aliquota_senar.toNumber(),
+    };
   }
 }

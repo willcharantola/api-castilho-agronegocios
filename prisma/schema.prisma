@@ -27,6 +27,9 @@
 // 2026-10-17: pecuarista (nome novo no sistema). O banco NÃO foi renomeado: os models/campos
 // pecuarista* apontam para as tabelas/colunas originais via @map/@@map — ao rodar
 // `prisma db pull`, refazer esses mapeamentos.
+// 2026-10-17: empresa.aliquota_funrural/aliquota_senar (NOT NULL, padrão 1,50 e 0,20, em %) e
+// negocio.aliquota_funrural/aliquota_senar (alíquotas usadas por aquele negócio, copiadas da
+// empresa na criação) — prisma/sql/script-ajustes-reuniao-cliente.sql. CHECK entre 0 e 100.
 
 generator client {
   provider = "prisma-client-js"
@@ -38,16 +41,18 @@ datasource db {
 }
 
 model empresa {
-  empresa_id Int       @id @default(autoincrement())
-  cnpj       String    @db.VarChar(18)
-  creci      String    @db.VarChar(20)
-  nome       String    @db.VarChar(50)
-  banco      String    @db.VarChar(20)
-  chave_pix  String    @db.VarChar(50)
-  agencia    String    @db.VarChar(4)
-  conta      String    @db.VarChar(10)
-  negocios   negocio[]
-  usuarios   usuario[]
+  empresa_id        Int       @id @default(autoincrement())
+  cnpj              String    @db.VarChar(18)
+  creci             String    @db.VarChar(20)
+  nome              String    @db.VarChar(50)
+  banco             String    @db.VarChar(20)
+  chave_pix         String    @db.VarChar(50)
+  agencia           String    @db.VarChar(4)
+  conta             String    @db.VarChar(10)
+  aliquota_funrural Decimal   @default(1.50) @db.Decimal(5, 2)
+  aliquota_senar    Decimal   @default(0.20) @db.Decimal(5, 2)
+  negocios          negocio[]
+  usuarios          usuario[]
 
   @@map("empresa")
 }
@@ -124,6 +129,8 @@ model negocio {
   peso_medio_quilos    Decimal?   @db.Decimal(14, 4)
   funrural             Decimal?   @db.Decimal(14, 2)
   senar                Decimal?   @db.Decimal(14, 2)
+  aliquota_funrural    Decimal?   @db.Decimal(5, 2)
+  aliquota_senar       Decimal?   @db.Decimal(5, 2)
   gados                gado[]
   comprador            comprador  @relation(fields: [comprador_id], references: [comprador_id], onDelete: NoAction, onUpdate: NoAction)
   empresa              empresa    @relation(fields: [empresa_id], references: [empresa_id], onDelete: NoAction, onUpdate: NoAction)
