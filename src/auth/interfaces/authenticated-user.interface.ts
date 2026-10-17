@@ -4,5 +4,4 @@ export interface AuthenticatedUser {
   empresa_id: number;
   email: string;
   nivel_acesso: string;
-  primeiro_acesso: boolean;
 }

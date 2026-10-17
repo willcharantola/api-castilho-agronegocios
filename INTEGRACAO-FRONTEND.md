@@ -238,14 +238,13 @@ na ordem fazenda → vendedor → comprador → negócio → atualização de ne
 - `PATCH /negocios/:id/concluir` aceita no corpo `{ "hora_fim_pesagem": "HH:mm:ss" }` (hora da
   conclusão no aparelho, enviada pela fila offline). Corpo vazio: hora do servidor, como antes.
 
-## Usuários e primeiro acesso
+## Usuários
 
-- `POST /auth/login` → `{ access_token, usuario }`, com `usuario` incluindo `usuario_id`, `empresa_id`,
-  `nivel_acesso` e `primeiro_acesso` (nunca a senha). E-mail é comparado em minúsculas.
+- `POST /auth/login` → `{ access_token, usuario }`, com `usuario` incluindo `usuario_id`, `empresa_id` e
+  `nivel_acesso` (nunca a senha). E-mail é comparado em minúsculas.
 - `GET /auth/me` → dados atuais do usuário logado.
-- `PATCH /auth/primeiro-acesso/senha` `{ nova_senha }` (6–72 caracteres, diferente da atual) → conclui o
-  primeiro acesso. Enquanto `primeiro_acesso = true`, **todas as outras rotas** respondem
-  `403 { code: "PRIMEIRO_ACESSO_PENDENTE" }` (exceto esta e `GET /auth/me`).
+- A senha definida pelo administrador no cadastro vale até ser alterada (não há troca obrigatória
+  no primeiro acesso).
 - `GET/POST /usuarios`, `GET/PATCH/DELETE /usuarios/:id`: só `Admin`, só usuários da própria empresa
   (outra empresa → 404). `empresa_id` vem do admin autenticado. `senha` no `PATCH` só se preenchida.
   E-mail duplicado → 409. Não é permitido excluir a própria conta nem excluir/rebaixar o último admin (400).

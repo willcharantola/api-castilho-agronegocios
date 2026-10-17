@@ -26,8 +26,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 
   /**
    * Usa sempre o estado atual do banco, não o que foi gravado no token: usuário
-   * excluído perde o acesso na hora, mudança de nível vale imediatamente e
-   * `primeiro_acesso` reflete a situação real.
+   * excluído perde o acesso na hora e mudança de nível vale imediatamente.
    */
   async validate(payload: JwtPayload): Promise<AuthenticatedUser> {
     const usuario = await this.prisma.usuario.findUnique({
@@ -37,7 +36,6 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         empresa_id: true,
         email: true,
         nivel_acesso: true,
-        primeiro_acesso: true,
       },
     });
     if (!usuario) {
@@ -48,7 +46,6 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       empresa_id: usuario.empresa_id,
       email: usuario.email,
       nivel_acesso: usuario.nivel_acesso,
-      primeiro_acesso: usuario.primeiro_acesso,
     };
   }
 }

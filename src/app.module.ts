@@ -7,7 +7,6 @@ import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
-import { PrimeiroAcessoGuard } from './auth/guards/primeiro-acesso.guard';
 import { CompradoresModule } from './compradores/compradores.module';
 import { EmpresasModule } from './empresas/empresas.module';
 import { FazendasModule } from './fazendas/fazendas.module';
@@ -37,8 +36,6 @@ import { VendedoresModule } from './vendedores/vendedores.module';
     // JwtAuthGuard roda antes de RolesGuard para popular request.user (exceto em rotas @Public()).
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
-    // Por último: depende de request.user. Bloqueia a API até a troca de senha do primeiro acesso.
-    { provide: APP_GUARD, useClass: PrimeiroAcessoGuard },
   ],
 })
 export class AppModule {}

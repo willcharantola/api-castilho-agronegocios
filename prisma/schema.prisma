@@ -19,6 +19,8 @@
 //   - usuario.nivel_acesso: "Admin" | "Normal"
 //   - vendedor.fisico_juridico: "fisico" | "juridico"
 // 2026-10-04: usuario.primeiro_acesso (NOT NULL DEFAULT TRUE) — fluxo de primeiro acesso.
+// 2026-10-17: fluxo de primeiro acesso removido; usuario.primeiro_acesso saiu do schema (a coluna
+// continua no banco, zerada, até o DROP opcional de prisma/sql/script-ajustes-reuniao-cliente.sql).
 // 2026-10-13: campos calculados do romaneio em negocio (peso_total_quilos, peso_total_arroba,
 // rendimento_medio, peso_medio_arroba, peso_medio_quilos, funrural, senar) — preenchidos
 // pela API em recalcularAgregados() (prisma/sql/script-campos-calculados-negocio.sql).
@@ -48,15 +50,14 @@ model empresa {
 }
 
 model usuario {
-  usuario_id      Int     @id @default(autoincrement())
-  empresa_id      Int
-  nome            String  @db.VarChar(50)
-  sobrenome       String  @db.VarChar(50)
-  nivel_acesso    String  @db.VarChar(10)
-  email           String  @unique @db.VarChar(254)
-  senha           String  @db.VarChar(255)
-  primeiro_acesso Boolean @default(true)
-  empresa         empresa @relation(fields: [empresa_id], references: [empresa_id], onDelete: NoAction, onUpdate: NoAction)
+  usuario_id   Int     @id @default(autoincrement())
+  empresa_id   Int
+  nome         String  @db.VarChar(50)
+  sobrenome    String  @db.VarChar(50)
+  nivel_acesso String  @db.VarChar(10)
+  email        String  @unique @db.VarChar(254)
+  senha        String  @db.VarChar(255)
+  empresa      empresa @relation(fields: [empresa_id], references: [empresa_id], onDelete: NoAction, onUpdate: NoAction)
 
   @@map("usuario")
 }

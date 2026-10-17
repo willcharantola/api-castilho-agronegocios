@@ -14,7 +14,6 @@ export const USUARIO_PUBLICO = {
   sobrenome: true,
   email: true,
   nivel_acesso: true,
-  primeiro_acesso: true,
 } satisfies Prisma.usuarioSelect;
 
 /** E-mail sempre em minúsculas e sem espaços (cadastro, edição e login). */
