@@ -21,9 +21,9 @@ export class CreateNegocioDto {
   @IsInt()
   fazenda_id: number;
 
-  @ApiProperty({ description: 'Vendedor que efetivamente fechou o negócio.' })
+  @ApiProperty({ description: 'Pecuarista que efetivamente fechou o negócio.' })
   @IsInt()
-  vendedor_id: number;
+  pecuarista_id: number;
 
   @ApiProperty()
   @IsInt()

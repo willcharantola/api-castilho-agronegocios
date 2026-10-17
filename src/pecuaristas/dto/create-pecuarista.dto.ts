@@ -10,12 +10,12 @@ import {
   MaxLength,
 } from 'class-validator';
 
-export class CreateVendedorDto {
+export class CreatePecuaristaDto {
   @ApiProperty({ maxLength: 50 })
   @IsString()
   @IsNotEmpty()
   @MaxLength(50)
-  nome_vendedor: string;
+  nome_pecuarista: string;
 
   @ApiProperty({ enum: ['fisico', 'juridico'] })
   @IsIn(['fisico', 'juridico'])
@@ -54,7 +54,7 @@ export class CreateVendedorDto {
   @ApiPropertyOptional({
     type: [Number],
     description:
-      'IDs das fazendas às quais o vendedor será associado (N:N). Em PATCH, substitui as associações existentes.',
+      'IDs das fazendas às quais o pecuarista será associado (N:N). Em PATCH, substitui as associações existentes.',
   })
   @IsOptional()
   @IsArray()

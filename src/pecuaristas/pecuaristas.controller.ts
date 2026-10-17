@@ -10,42 +10,42 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AssociarFazendaDto } from './dto/associar-fazenda.dto';
-import { CreateVendedorDto } from './dto/create-vendedor.dto';
-import { UpdateVendedorDto } from './dto/update-vendedor.dto';
-import { VendedoresService } from './vendedores.service';
+import { CreatePecuaristaDto } from './dto/create-pecuarista.dto';
+import { UpdatePecuaristaDto } from './dto/update-pecuarista.dto';
+import { PecuaristasService } from './pecuaristas.service';
 
-@ApiTags('vendedores')
+@ApiTags('pecuaristas')
 @ApiBearerAuth()
-@Controller('vendedores')
-export class VendedoresController {
-  constructor(private readonly vendedoresService: VendedoresService) {}
+@Controller('pecuaristas')
+export class PecuaristasController {
+  constructor(private readonly pecuaristasService: PecuaristasService) {}
 
   @Post()
-  create(@Body() dto: CreateVendedorDto) {
-    return this.vendedoresService.create(dto);
+  create(@Body() dto: CreatePecuaristaDto) {
+    return this.pecuaristasService.create(dto);
   }
 
   @Get()
   findAll() {
-    return this.vendedoresService.findAll();
+    return this.pecuaristasService.findAll();
   }
 
   @Get(':id')
   findOne(@Param('id', ParseIntPipe) id: number) {
-    return this.vendedoresService.findOne(id);
+    return this.pecuaristasService.findOne(id);
   }
 
   @Patch(':id')
   update(
     @Param('id', ParseIntPipe) id: number,
-    @Body() dto: UpdateVendedorDto,
+    @Body() dto: UpdatePecuaristaDto,
   ) {
-    return this.vendedoresService.update(id, dto);
+    return this.pecuaristasService.update(id, dto);
   }
 
   @Delete(':id')
   remove(@Param('id', ParseIntPipe) id: number) {
-    return this.vendedoresService.remove(id);
+    return this.pecuaristasService.remove(id);
   }
 
   @Post(':id/fazendas')
@@ -53,7 +53,7 @@ export class VendedoresController {
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: AssociarFazendaDto,
   ) {
-    return this.vendedoresService.associarFazenda(id, dto.fazenda_id);
+    return this.pecuaristasService.associarFazenda(id, dto.fazenda_id);
   }
 
   @Delete(':id/fazendas/:fazendaId')
@@ -61,6 +61,6 @@ export class VendedoresController {
     @Param('id', ParseIntPipe) id: number,
     @Param('fazendaId', ParseIntPipe) fazendaId: number,
   ) {
-    return this.vendedoresService.desassociarFazenda(id, fazendaId);
+    return this.pecuaristasService.desassociarFazenda(id, fazendaId);
   }
 }

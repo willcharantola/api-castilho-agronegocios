@@ -43,7 +43,7 @@ export class FazendasService {
   async findOne(fazendaId: number) {
     const fazenda = await this.prisma.fazenda.findUnique({
       where: { fazenda_id: fazendaId },
-      include: { vendedor_fazenda: { include: { vendedor: true } } },
+      include: { pecuarista_fazenda: { include: { pecuarista: true } } },
     });
     if (!fazenda) {
       throw new NotFoundException(`Fazenda ${fazendaId} não encontrada`);
@@ -68,7 +68,7 @@ export class FazendasService {
     await this.findOne(fazendaId);
     try {
       return await this.prisma.$transaction(async (tx) => {
-        await tx.vendedor_fazenda.deleteMany({
+        await tx.pecuarista_fazenda.deleteMany({
           where: { fazenda_id: fazendaId },
         });
         return tx.fazenda.delete({ where: { fazenda_id: fazendaId } });

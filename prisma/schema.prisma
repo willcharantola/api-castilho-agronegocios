@@ -5,7 +5,7 @@
 // Re-executado em 2026-10-02: negocio.tipo_precificacao removida; negocio.porcentagem_comissao
 // adicionada (comissao passa a ser o valor em R$ calculado a partir dela); gado.horario_pesagem
 // passou a ser NOT NULL (sempre preenchido pelo servidor).
-// 2026-10-03: uuid_origem (opcional, único) em fazenda, vendedor, comprador, negocio e gado —
+// 2026-10-03: uuid_origem (opcional, único) em fazenda, pecuarista, comprador, negocio e gado —
 // idempotência da sincronização offline (prisma/sql/2026-10-03-uuid-origem.sql; confirmado
 // via `npx prisma db pull` em 2026-10-03).
 // CHECK constraints existentes no banco não são representadas aqui (Prisma não suporta
@@ -17,13 +17,16 @@
 //   - negocio.tipo_gado: "Gordo" | "Magro"
 //   - negocio.tipo_lote: "Vaca" | "Boi" | "Novilha" | "Garrote" | "Bezerro" | "Variados"
 //   - usuario.nivel_acesso: "Admin" | "Normal"
-//   - vendedor.fisico_juridico: "fisico" | "juridico"
+//   - pecuarista.fisico_juridico: "fisico" | "juridico"
 // 2026-10-04: usuario.primeiro_acesso (NOT NULL DEFAULT TRUE) — fluxo de primeiro acesso.
 // 2026-10-17: fluxo de primeiro acesso removido; usuario.primeiro_acesso saiu do schema (a coluna
 // continua no banco, zerada, até o DROP opcional de prisma/sql/script-ajustes-reuniao-cliente.sql).
 // 2026-10-13: campos calculados do romaneio em negocio (peso_total_quilos, peso_total_arroba,
 // rendimento_medio, peso_medio_arroba, peso_medio_quilos, funrural, senar) — preenchidos
 // pela API em recalcularAgregados() (prisma/sql/script-campos-calculados-negocio.sql).
+// 2026-10-17: pecuarista (nome novo no sistema). O banco NÃO foi renomeado: os models/campos
+// pecuarista* apontam para as tabelas/colunas originais via @map/@@map — ao rodar
+// `prisma db pull`, refazer esses mapeamentos.
 
 generator client {
   provider = "prisma-client-js"
@@ -63,69 +66,69 @@ model usuario {
 }
 
 model fazenda {
-  fazenda_id         Int                @id @default(autoincrement())
-  nome_fazenda       String             @db.VarChar(50)
-  municipio          String             @db.VarChar(20)
-  inscricao_estadual String             @db.VarChar(12)
-  marca_url          String?            @db.VarChar(500)
-  marca_escrita      String?            @db.VarChar(10)
-  uuid_origem        String?            @unique @db.Uuid
+  fazenda_id         Int                  @id @default(autoincrement())
+  nome_fazenda       String               @db.VarChar(50)
+  municipio          String               @db.VarChar(20)
+  inscricao_estadual String               @db.VarChar(12)
+  marca_url          String?              @db.VarChar(500)
+  marca_escrita      String?              @db.VarChar(10)
+  uuid_origem        String?              @unique @db.Uuid
   negocios           negocio[]
-  vendedor_fazenda   vendedor_fazenda[]
+  pecuarista_fazenda pecuarista_fazenda[]
 
   @@map("fazenda")
 }
 
-model vendedor {
-  vendedor_id      Int                @id @default(autoincrement())
-  nome_vendedor    String             @db.VarChar(50)
-  fisico_juridico  String             @db.VarChar(8)
-  cpf_cnpj         String             @db.VarChar(20)
-  banco            String             @db.VarChar(20)
-  agencia          String             @db.VarChar(5)
-  conta            String             @db.VarChar(10)
-  chave_pix        String             @db.VarChar(50)
-  uuid_origem      String?            @unique @db.Uuid
-  negocio          negocio[]
-  vendedor_fazenda vendedor_fazenda[]
+model pecuarista {
+  pecuarista_id      Int                  @id @default(autoincrement()) @map("vendedor_id")
+  nome_pecuarista    String               @map("nome_vendedor") @db.VarChar(50)
+  fisico_juridico    String               @db.VarChar(8)
+  cpf_cnpj           String               @db.VarChar(20)
+  banco              String               @db.VarChar(20)
+  agencia            String               @db.VarChar(5)
+  conta              String               @db.VarChar(10)
+  chave_pix          String               @db.VarChar(50)
+  uuid_origem        String?              @unique @db.Uuid
+  negocio            negocio[]
+  pecuarista_fazenda pecuarista_fazenda[]
 
   @@map("vendedor")
 }
 
 model negocio {
-  negocio_id           Int       @id @default(autoincrement())
+  negocio_id           Int        @id @default(autoincrement())
   empresa_id           Int
   fazenda_id           Int
   comprador_id         Int
-  vendedor_id          Int
-  hora_inicio_pesagem  DateTime? @db.Time(6)
-  hora_fim_pesagem     DateTime? @db.Time(6)
-  valor_total          Decimal   @db.Decimal(15, 2)
-  valor_medio          Decimal?  @db.Decimal(15, 2)
+  pecuarista_id        Int        @map("vendedor_id")
+  hora_inicio_pesagem  DateTime?  @db.Time(6)
+  hora_fim_pesagem     DateTime?  @db.Time(6)
+  valor_total          Decimal    @db.Decimal(15, 2)
+  valor_medio          Decimal?   @db.Decimal(15, 2)
   qtd_animais          Int
-  modalidade           String    @db.VarChar(6)
-  tipo_gado            String    @db.VarChar(5)
-  tipo_lote            String    @db.VarChar(8)
-  valor_unidade        Decimal   @db.Decimal(15, 2)
-  mais_pesado          Decimal?  @db.Decimal(15, 2)
-  mais_leve            Decimal?  @db.Decimal(15, 2)
-  data_negocio         DateTime  @db.Timestamp(6)
-  porcentagem_comissao Decimal?  @db.Decimal(5, 2)
-  comissao             Decimal?  @db.Decimal(15, 2)
-  observacao           String?   @db.VarChar(100)
-  uuid_origem          String?   @unique @db.Uuid
-  peso_total_quilos    Decimal?  @db.Decimal(14, 4)
-  peso_total_arroba    Decimal?  @db.Decimal(14, 4)
-  rendimento_medio     Decimal?  @db.Decimal(8, 4)
-  peso_medio_arroba    Decimal?  @db.Decimal(14, 4)
-  peso_medio_quilos    Decimal?  @db.Decimal(14, 4)
-  funrural             Decimal?  @db.Decimal(14, 2)
-  senar                Decimal?  @db.Decimal(14, 2)
+  modalidade           String     @db.VarChar(6)
+  tipo_gado            String     @db.VarChar(5)
+  tipo_lote            String     @db.VarChar(8)
+  valor_unidade        Decimal    @db.Decimal(15, 2)
+  mais_pesado          Decimal?   @db.Decimal(15, 2)
+  mais_leve            Decimal?   @db.Decimal(15, 2)
+  data_negocio         DateTime   @db.Timestamp(6)
+  porcentagem_comissao Decimal?   @db.Decimal(5, 2)
+  comissao             Decimal?   @db.Decimal(15, 2)
+  observacao           String?    @db.VarChar(100)
+  uuid_origem          String?    @unique @db.Uuid
+  peso_total_quilos    Decimal?   @db.Decimal(14, 4)
+  peso_total_arroba    Decimal?   @db.Decimal(14, 4)
+  rendimento_medio     Decimal?   @db.Decimal(8, 4)
+  peso_medio_arroba    Decimal?   @db.Decimal(14, 4)
+  peso_medio_quilos    Decimal?   @db.Decimal(14, 4)
+  funrural             Decimal?   @db.Decimal(14, 2)
+  senar                Decimal?   @db.Decimal(14, 2)
   gados                gado[]
-  comprador            comprador @relation(fields: [comprador_id], references: [comprador_id], onDelete: NoAction, onUpdate: NoAction)
-  empresa              empresa   @relation(fields: [empresa_id], references: [empresa_id], onDelete: NoAction, onUpdate: NoAction)
-  fazenda              fazenda   @relation(fields: [fazenda_id], references: [fazenda_id], onDelete: NoAction, onUpdate: NoAction)
-  vendedor             vendedor  @relation(fields: [vendedor_id], references: [vendedor_id], onDelete: NoAction, onUpdate: NoAction)
+  comprador            comprador  @relation(fields: [comprador_id], references: [comprador_id], onDelete: NoAction, onUpdate: NoAction)
+  empresa              empresa    @relation(fields: [empresa_id], references: [empresa_id], onDelete: NoAction, onUpdate: NoAction)
+  fazenda              fazenda    @relation(fields: [fazenda_id], references: [fazenda_id], onDelete: NoAction, onUpdate: NoAction)
+  pecuarista           pecuarista @relation(fields: [pecuarista_id], references: [pecuarista_id], onDelete: NoAction, onUpdate: NoAction)
 
   @@map("negocio")
 }
@@ -161,11 +164,12 @@ model comprador {
   negocio        negocio[]
 }
 
-model vendedor_fazenda {
-  fazenda_id  Int
-  vendedor_id Int
-  fazenda     fazenda  @relation(fields: [fazenda_id], references: [fazenda_id], onDelete: NoAction, onUpdate: NoAction)
-  vendedor    vendedor @relation(fields: [vendedor_id], references: [vendedor_id], onDelete: NoAction, onUpdate: NoAction)
+model pecuarista_fazenda {
+  fazenda_id    Int
+  pecuarista_id Int        @map("vendedor_id")
+  fazenda       fazenda    @relation(fields: [fazenda_id], references: [fazenda_id], onDelete: NoAction, onUpdate: NoAction)
+  pecuarista    pecuarista @relation(fields: [pecuarista_id], references: [pecuarista_id], onDelete: NoAction, onUpdate: NoAction)
 
-  @@id([fazenda_id, vendedor_id])
+  @@id([fazenda_id, pecuarista_id])
+  @@map("vendedor_fazenda")
 }

@@ -126,7 +126,7 @@ Base URL: `NEXT_PUBLIC_API_URL`. Todos exigem JWT exceto os marcados como **púb
 | Empresas | `GET/POST /empresas`, `GET/PATCH/DELETE /empresas/:id` | — |
 | Usuários | `GET/POST /usuarios`, `GET/PATCH/DELETE /usuarios/:id` | **Exige `nivel_acesso: "Admin"`** em todas as rotas |
 | Fazendas | `GET/POST /fazendas`, `GET/PATCH/DELETE /fazendas/:id` | — |
-| Vendedores | `GET/POST /vendedores`, `GET/PATCH/DELETE /vendedores/:id` | — |
+| Pecuaristas | `GET/POST /pecuaristas`, `GET/PATCH/DELETE /pecuaristas/:id` | — |
 | Negócios | `GET/POST /negocios`, `GET/PATCH /negocios/:id`, `PATCH /negocios/:id/concluir`, `DELETE /negocios/:id` | `DELETE` **exige `Admin`**. `GET /negocios/:id` inclui os `gados` do negócio. `GET /negocios` aceita `?fazenda_id=&data_inicio=&data_fim=` |
 | Gados | `GET/POST /gados`, `GET/PATCH/DELETE /gados/:id` | Cada gado pertence a um `negocio_id` |
 
@@ -149,8 +149,8 @@ usam — ajuste os `types`/`interfaces` do Next.js de acordo.
 ### `fazenda`
 `fazenda_id`, `nome_fazenda`, `municipio`, `inscricao_estadual`
 
-### `vendedor`
-`vendedor_id`, `fazenda_id`, `nome_vendedor`, `fisico_juridico` (`"fisico"` | `"juridico"`),
+### `pecuarista`
+`pecuarista_id`, `fazenda_id`, `nome_pecuarista`, `fisico_juridico` (`"fisico"` | `"juridico"`),
 `cpf_cnpj`, `banco`, `agencia`, `conta`, `chave_pix`
 
 ### `negocio`
@@ -226,9 +226,9 @@ Formato padrão de erro (Nest):
 ## Sincronização offline (PWA)
 
 Cadastros feitos sem internet ficam numa fila no aparelho (IndexedDB) e são enviados depois,
-na ordem fazenda → vendedor → comprador → negócio → atualização de negócio → gado → conclusão.
+na ordem fazenda → pecuarista → comprador → negócio → atualização de negócio → gado → conclusão.
 
-- `uuid_origem` (opcional, UUID) nos `POST` de `/fazendas`, `/vendedores`, `/compradores`,
+- `uuid_origem` (opcional, UUID) nos `POST` de `/fazendas`, `/pecuaristas`, `/compradores`,
   `/negocios` e `/gados`: se já existir um registro com esse valor, a API **devolve o existente**
   em vez de criar outro (reenvio após uma resposta perdida não duplica). Não é editável via `PATCH`.
   Requer as colunas criadas por `prisma/sql/2026-10-03-uuid-origem.sql`.

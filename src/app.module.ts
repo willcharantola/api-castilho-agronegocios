@@ -14,7 +14,7 @@ import { GadosModule } from './gados/gados.module';
 import { NegociosModule } from './negocios/negocios.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { UsuariosModule } from './usuarios/usuarios.module';
-import { VendedoresModule } from './vendedores/vendedores.module';
+import { PecuaristasModule } from './pecuaristas/pecuaristas.module';
 
 @Module({
   imports: [
@@ -24,7 +24,7 @@ import { VendedoresModule } from './vendedores/vendedores.module';
     EmpresasModule,
     UsuariosModule,
     FazendasModule,
-    VendedoresModule,
+    PecuaristasModule,
     CompradoresModule,
     NegociosModule,
     GadosModule,

@@ -96,7 +96,12 @@ export class NegociosService {
   async findOne(negocioId: number) {
     const negocio = await this.prisma.negocio.findUnique({
       where: { negocio_id: negocioId },
-      include: { gados: true, comprador: true, vendedor: true, fazenda: true },
+      include: {
+        gados: true,
+        comprador: true,
+        pecuarista: true,
+        fazenda: true,
+      },
     });
     if (!negocio) {
       throw new NotFoundException(`Negócio ${negocioId} não encontrado`);
