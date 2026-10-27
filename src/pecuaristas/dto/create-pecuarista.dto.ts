@@ -1,14 +1,17 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 import {
+  ArrayMinSize,
   IsArray,
   IsIn,
-  IsInt,
   IsNotEmpty,
   IsOptional,
   IsString,
   IsUUID,
   MaxLength,
+  ValidateNested,
 } from 'class-validator';
+import { FazendaDoPecuaristaDto } from './fazenda-do-pecuarista.dto';
 
 export class CreatePecuaristaDto {
   @ApiProperty({ maxLength: 50 })
@@ -33,16 +36,16 @@ export class CreatePecuaristaDto {
   @MaxLength(20)
   banco: string;
 
-  @ApiProperty({ maxLength: 5 })
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(5)
-  agencia: string;
-
   @ApiProperty({ maxLength: 10 })
   @IsString()
   @IsNotEmpty()
   @MaxLength(10)
+  agencia: string;
+
+  @ApiProperty({ maxLength: 20 })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(20)
   conta: string;
 
   @ApiProperty({ maxLength: 50 })
@@ -51,15 +54,17 @@ export class CreatePecuaristaDto {
   @MaxLength(50)
   chave_pix: string;
 
-  @ApiPropertyOptional({
-    type: [Number],
+  @ApiProperty({
+    type: [FazendaDoPecuaristaDto],
     description:
-      'IDs das fazendas às quais o pecuarista será associado (N:N). Em PATCH, substitui as associações existentes.',
+      'Pelo menos uma fazenda: nova (criada junto, na mesma transação) ou `{ fazenda_id }` de ' +
+      'uma já cadastrada. Só no POST — depois, use POST /pecuaristas/:id/fazendas.',
   })
-  @IsOptional()
   @IsArray()
-  @IsInt({ each: true })
-  fazenda_ids?: number[];
+  @ArrayMinSize(1, { message: 'Cadastre pelo menos uma fazenda para o pecuarista' })
+  @ValidateNested({ each: true })
+  @Type(() => FazendaDoPecuaristaDto)
+  fazendas: FazendaDoPecuaristaDto[];
 
   @ApiPropertyOptional({
     format: 'uuid',

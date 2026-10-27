@@ -11,6 +11,29 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
+import {
+  MODALIDADES,
+  TIPOS_GADO,
+  TIPOS_LOTE,
+  TIPOS_NEGOCIO,
+} from '../../common/dominio';
+
+/** Percentual de rendimento de uma categoria: 0 a 100, até 2 casas (CHECK no banco). */
+function Rendimento(raca: string): PropertyDecorator {
+  return (alvo, propriedade) => {
+    ApiPropertyOptional({
+      minimum: 0,
+      maximum: 100,
+      description:
+        `Rendimento de carcaça (%) da categoria ${raca}. Obrigatório na modalidade "arroba"; ` +
+        'nas modalidades "kg" e "cabeca" a API grava 100 (rendimento neutro) e ignora o valor enviado.',
+    })(alvo, propriedade);
+    IsOptional()(alvo, propriedade);
+    IsNumber({ maxDecimalPlaces: 2 })(alvo, propriedade);
+    Min(0)(alvo, propriedade);
+    Max(100)(alvo, propriedade);
+  };
+}
 
 export class CreateNegocioDto {
   @ApiProperty()
@@ -32,19 +55,48 @@ export class CreateNegocioDto {
   // hora_inicio_pesagem e hora_fim_pesagem não são aceitos do cliente: o servidor os
   // registra no primeiro POST /gados do negócio e em PATCH /negocios/:id/concluir.
 
-  @ApiProperty({ enum: ['arroba', 'kg', 'cabeca'] })
-  @IsIn(['arroba', 'kg', 'cabeca'])
+  @ApiProperty({ enum: MODALIDADES })
+  @IsIn(MODALIDADES)
   modalidade: string;
 
-  @ApiProperty({ enum: ['Gordo', 'Magro'] })
-  @IsIn(['Gordo', 'Magro'])
+  @ApiProperty({ enum: TIPOS_GADO })
+  @IsIn(TIPOS_GADO)
   tipo_gado: string;
 
-  @ApiProperty({
-    enum: ['Vaca', 'Boi', 'Novilha', 'Garrote', 'Bezerro', 'Variados'],
-  })
-  @IsIn(['Vaca', 'Boi', 'Novilha', 'Garrote', 'Bezerro', 'Variados'])
+  @ApiProperty({ enum: TIPOS_LOTE })
+  @IsIn(TIPOS_LOTE)
   tipo_lote: string;
+
+  @ApiProperty({
+    enum: TIPOS_NEGOCIO,
+    description:
+      'Define o cálculo de Funrural e Senar: "Desconto em folha" só Senar, "Funrural" só ' +
+      'Funrural, "Livre" nenhum.',
+  })
+  @IsIn(TIPOS_NEGOCIO)
+  tipo_negocio: string;
+
+  @ApiProperty({
+    maxLength: 30,
+    example: '8,9 e 10',
+    description:
+      'Média do carimbo do lote, texto livre. Só o tamanho é limitado, pela coluna VARCHAR(30).',
+  })
+  @IsString()
+  @MaxLength(30)
+  media_carimbo: string;
+
+  @Rendimento('Nelore')
+  porcentagem_rendimento_nelore?: number;
+
+  @Rendimento('Anelorado')
+  porcentagem_rendimento_anelorado?: number;
+
+  @Rendimento('Angus')
+  porcentagem_rendimento_angus?: number;
+
+  @Rendimento('Composto')
+  porcentagem_rendimento_composto?: number;
 
   @ApiProperty({ example: '2026-09-09T00:00:00.000Z' })
   @IsDateString()
@@ -83,7 +135,8 @@ export class CreateNegocioDto {
   // valor_medio, mais_pesado e mais_leve ficam NULL na modalidade "cabeca".
   // Campos do romaneio (peso_total_quilos, peso_total_arroba, rendimento_medio,
   // peso_medio_arroba, peso_medio_quilos, funrural, senar) também são calculados pela
-  // API e, fora do DTO, são rejeitados pelo forbidNonWhitelisted.
+  // API e, fora do DTO, são rejeitados pelo forbidNonWhitelisted. aliquota_funrural e
+  // aliquota_senar são copiadas da empresa na criação.
 
   @ApiPropertyOptional({
     format: 'uuid',

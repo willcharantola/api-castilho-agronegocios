@@ -3,17 +3,15 @@ import {
   IsDateString,
   IsIn,
   IsInt,
-  IsNotEmpty,
   IsNumber,
   IsOptional,
   IsString,
   IsUUID,
   Matches,
-  Max,
-  MaxLength,
   Min,
   ValidateIf,
 } from 'class-validator';
+import { RACAS_RENDIMENTO } from '../../common/dominio';
 import { HORA_REGEX } from '../../common/time.util';
 
 export class CreateGadoDto {
@@ -25,16 +23,6 @@ export class CreateGadoDto {
   @IsNumber()
   @Min(0)
   peso_total: number;
-
-  @ApiProperty({
-    minimum: 0,
-    maximum: 100,
-    description: 'Percentual entre 0 e 100, informado por animal.',
-  })
-  @IsNumber()
-  @Min(0)
-  @Max(100)
-  rendimento_carcaca: number;
 
   @ApiProperty({ example: '2026-09-09T00:00:00.000Z' })
   @IsDateString()
@@ -57,17 +45,14 @@ export class CreateGadoDto {
   @IsIn(['Macho', 'Femea'])
   genero: string;
 
-  @ApiProperty({ maxLength: 20 })
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(20)
+  @ApiProperty({
+    enum: RACAS_RENDIMENTO,
+    description:
+      'Categoria de rendimento do animal: define qual percentual de rendimento do negócio ' +
+      'entra no cálculo (porcentagem_rendimento_nelore, _anelorado, _angus ou _composto).',
+  })
+  @IsIn(RACAS_RENDIMENTO)
   denominacao: string;
-
-  @ApiProperty({ minimum: 1, maximum: 12, description: 'Mês (1 a 12).' })
-  @IsInt()
-  @Min(1)
-  @Max(12)
-  carimbo: number;
 
   @ApiProperty({ maxLength: 4, example: '2025' })
   @IsString()
@@ -75,7 +60,9 @@ export class CreateGadoDto {
   ano_carimbo: string;
 
   // peso_calculo, peso_arroba e valor_total são calculados no backend a partir de
-  // peso_total e do rendimento_carcaca do próprio gado — não fazem parte do DTO de entrada.
+  // peso_total e do percentual de rendimento da categoria (denominacao) no negócio — não
+  // fazem parte do DTO de entrada. rendimento_carcaca e carimbo deixaram de existir: se
+  // enviados, o forbidNonWhitelisted responde 400.
 
   @ApiPropertyOptional({
     format: 'uuid',

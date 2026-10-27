@@ -3,19 +3,23 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { type gado } from '@prisma/client';
 import { handlePrismaError } from '../common/prisma-error.util';
 import { criarIdempotente } from '../common/idempotencia.util';
 import { horaAtual, horaParaDate } from '../common/time.util';
-import { NegociosService } from '../negocios/negocios.service';
+import {
+  calcularValoresGado,
+  rendimentoDaRaca,
+  type ValoresGado,
+} from '../negocios/calculo.util';
+import {
+  comRendimentoDerivado,
+  NegociosService,
+  rendimentosDoNegocio,
+} from '../negocios/negocios.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateGadoDto } from './dto/create-gado.dto';
 import { UpdateGadoDto } from './dto/update-gado.dto';
-
-interface ValoresCalculados {
-  peso_calculo: number;
-  peso_arroba: number;
-  valor_total: number;
-}
 
 @Injectable()
 export class GadosService {
@@ -25,54 +29,30 @@ export class GadosService {
   ) {}
 
   /**
-   * Calcula os valores do gado conforme a modalidade do negócio. O
-   * rendimento_carcaca vem do próprio gado (ajustável por animal na pesagem).
-   * valorUnidade é o valor por arroba, kg ou cabeça, conforme a modalidade.
-   * Para "kg" e "cabeca", peso_calculo e peso_arroba não se aplicam e são gravados
-   * como 0 (colunas NOT NULL no schema).
+   * Valores do gado a partir do percentual de rendimento da categoria do animal
+   * (denominacao) no negócio — ver calcularValoresGado().
    */
-  private calcularValores(
+  private async calcularValores(
+    negocioId: number,
     pesoTotal: number,
-    rendimentoCarcaca: number,
-    modalidade: string,
-    valorUnidade: number,
-  ): ValoresCalculados {
-    switch (modalidade) {
-      case 'arroba': {
-        const peso_calculo = pesoTotal * (rendimentoCarcaca / 100);
-        // Valor exato, sem arredondamento (a pedido do cliente).
-        const peso_arroba = peso_calculo / 15;
-        const valor_total = peso_arroba * valorUnidade;
-        return { peso_calculo, peso_arroba, valor_total };
-      }
-      case 'kg':
-        return {
-          peso_calculo: 0,
-          peso_arroba: 0,
-          valor_total: valorUnidade * pesoTotal,
-        };
-      case 'cabeca':
-        return { peso_calculo: 0, peso_arroba: 0, valor_total: valorUnidade };
-      default:
-        throw new BadRequestException(`Modalidade inválida: ${modalidade}`);
-    }
+    denominacao: string,
+  ): Promise<ValoresGado> {
+    const negocio = await this.negociosService.parametrosCalculo(negocioId);
+    this.garantirModalidadeComGado(negocio.modalidade, negocioId);
+    return calcularValoresGado(
+      negocio.modalidade,
+      pesoTotal,
+      rendimentoDaRaca(negocio.rendimentos, denominacao),
+      negocio.valorUnidade,
+    );
   }
 
-  private async buscarParametrosNegocio(negocioId: number) {
-    const negocio = await this.prisma.negocio.findUnique({
-      where: { negocio_id: negocioId },
-      select: {
-        modalidade: true,
-        valor_unidade: true,
-      },
-    });
-    if (!negocio) {
-      throw new NotFoundException(`Negócio ${negocioId} não encontrado`);
-    }
-    return {
-      modalidade: negocio.modalidade,
-      valorUnidade: negocio.valor_unidade.toNumber(),
-    };
+  /** Resposta com o campo derivado rendimento_carcaca (ver comRendimentoDerivado). */
+  private async comRendimento<T extends gado>(registro: T) {
+    const { rendimentos } = await this.negociosService.parametrosCalculo(
+      registro.negocio_id,
+    );
+    return comRendimentoDerivado(registro, rendimentos);
   }
 
   /**
@@ -91,13 +71,10 @@ export class GadosService {
   }
 
   async create(dto: CreateGadoDto, fuso?: string) {
-    const negocio = await this.buscarParametrosNegocio(dto.negocio_id);
-    this.garantirModalidadeComGado(negocio.modalidade, dto.negocio_id);
-    const valores = this.calcularValores(
+    const valores = await this.calcularValores(
+      dto.negocio_id,
       dto.peso_total,
-      dto.rendimento_carcaca,
-      negocio.modalidade,
-      negocio.valorUnidade,
+      dto.denominacao,
     );
 
     // Online: hora local do cliente no momento do cadastro (instante do servidor, fuso do
@@ -123,7 +100,7 @@ export class GadosService {
         }),
     );
     // Reenvio de um gado já sincronizado: nada mudou no negócio.
-    if (existente) return gado;
+    if (existente) return this.comRendimento(gado);
 
     // Primeiro gado do negócio marca o início da pesagem (no-op nos seguintes).
     await this.negociosService.registrarInicioPesagem(
@@ -131,11 +108,25 @@ export class GadosService {
       horarioPesagem,
     );
     await this.negociosService.recalcularAgregados(dto.negocio_id);
-    return gado;
+    return this.comRendimento(gado);
   }
 
-  findAll() {
-    return this.prisma.gado.findMany();
+  async findAll() {
+    const gados = await this.prisma.gado.findMany({
+      include: {
+        negocio: {
+          select: {
+            porcentagem_rendimento_nelore: true,
+            porcentagem_rendimento_anelorado: true,
+            porcentagem_rendimento_angus: true,
+            porcentagem_rendimento_composto: true,
+          },
+        },
+      },
+    });
+    return gados.map(({ negocio, ...gado }) =>
+      comRendimentoDerivado(gado, rendimentosDoNegocio(negocio)),
+    );
   }
 
   async findOne(gadoId: number) {
@@ -145,31 +136,25 @@ export class GadosService {
     if (!gado) {
       throw new NotFoundException(`Gado ${gadoId} não encontrado`);
     }
-    return gado;
+    return this.comRendimento(gado);
   }
 
   async update(gadoId: number, dto: UpdateGadoDto) {
     const atual = await this.findOne(gadoId);
 
     const negocioDestino = dto.negocio_id ?? atual.negocio_id;
+    // Trocar a categoria (denominacao) troca o percentual de rendimento usado.
     const precisaRecalcular =
       dto.peso_total !== undefined ||
-      dto.rendimento_carcaca !== undefined ||
+      dto.denominacao !== undefined ||
       dto.negocio_id !== undefined;
-    let valores: Partial<ValoresCalculados> = {};
-    if (dto.negocio_id !== undefined && dto.negocio_id !== atual.negocio_id) {
-      const destino = await this.buscarParametrosNegocio(dto.negocio_id);
-      this.garantirModalidadeComGado(destino.modalidade, dto.negocio_id);
-    }
-    if (precisaRecalcular) {
-      const negocio = await this.buscarParametrosNegocio(negocioDestino);
-      valores = this.calcularValores(
-        dto.peso_total ?? atual.peso_total.toNumber(),
-        dto.rendimento_carcaca ?? atual.rendimento_carcaca.toNumber(),
-        negocio.modalidade,
-        negocio.valorUnidade,
-      );
-    }
+    const valores: Partial<ValoresGado> = precisaRecalcular
+      ? await this.calcularValores(
+          negocioDestino,
+          dto.peso_total ?? atual.peso_total.toNumber(),
+          dto.denominacao ?? atual.denominacao,
+        )
+      : {};
 
     let gado;
     try {
@@ -191,7 +176,7 @@ export class GadosService {
     if (negocioDestino !== atual.negocio_id) {
       await this.negociosService.recalcularAgregados(negocioDestino);
     }
-    return gado;
+    return this.comRendimento(gado);
   }
 
   async remove(gadoId: number) {
@@ -201,7 +186,7 @@ export class GadosService {
         where: { gado_id: gadoId },
       });
       await this.negociosService.recalcularAgregados(atual.negocio_id);
-      return gado;
+      return this.comRendimento(gado);
     } catch (error) {
       handlePrismaError(error);
     }
