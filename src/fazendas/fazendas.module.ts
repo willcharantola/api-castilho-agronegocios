@@ -8,5 +8,7 @@ import { FazendasService } from './fazendas.service';
   imports: [UploadsModule],
   controllers: [FazendasController],
   providers: [FazendasService],
+  // Usado pelo cadastro de pecuarista, que cria as fazendas na mesma transação.
+  exports: [FazendasService],
 })
 export class FazendasModule {}

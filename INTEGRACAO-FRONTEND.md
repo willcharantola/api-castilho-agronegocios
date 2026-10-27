@@ -125,10 +125,11 @@ Base URL: `NEXT_PUBLIC_API_URL`. Todos exigem JWT exceto os marcados como **púb
 | Health | `GET /` (**pública**) | Checagem simples, sem dados |
 | Empresas | `GET/POST /empresas`, `GET/PATCH/DELETE /empresas/:id` | — |
 | Usuários | `GET/POST /usuarios`, `GET/PATCH/DELETE /usuarios/:id` | **Exige `nivel_acesso: "Admin"`** em todas as rotas |
-| Fazendas | `GET/POST /fazendas`, `GET/PATCH/DELETE /fazendas/:id` | — |
-| Vendedores | `GET/POST /vendedores`, `GET/PATCH/DELETE /vendedores/:id` | — |
+| Fazendas | `GET /fazendas`, `GET/PATCH/DELETE /fazendas/:id` | Fazenda nova nasce dentro de um pecuarista (ver abaixo). `POST /fazendas` continua só para itens antigos da fila offline |
+| Pecuaristas | `GET/POST /pecuaristas`, `GET/PATCH/DELETE /pecuaristas/:id`, `POST /pecuaristas/:id/fazendas`, `DELETE /pecuaristas/:id/fazendas/:fazendaId` | `POST` cria pecuarista + fazendas numa transação. `DELETE` do vínculo responde `409` se houver negócio com o par |
 | Negócios | `GET/POST /negocios`, `GET/PATCH /negocios/:id`, `PATCH /negocios/:id/concluir`, `DELETE /negocios/:id` | `DELETE` **exige `Admin`**. `GET /negocios/:id` inclui os `gados` do negócio. `GET /negocios` aceita `?fazenda_id=&data_inicio=&data_fim=` |
 | Gados | `GET/POST /gados`, `GET/PATCH/DELETE /gados/:id` | Cada gado pertence a um `negocio_id` |
+| Configurações | `GET /configuracoes/impostos`, `PATCH /configuracoes/impostos` | Alíquotas da empresa do usuário logado. `PATCH` **exige `Admin`** |
 
 A documentação interativa (Swagger) está em `${NEXT_PUBLIC_API_URL}/docs` — útil para explorar
 payloads exatos e testar chamadas com o botão "Authorize".
@@ -149,17 +150,36 @@ usam — ajuste os `types`/`interfaces` do Next.js de acordo.
 ### `fazenda`
 `fazenda_id`, `nome_fazenda`, `municipio`, `inscricao_estadual`
 
-### `vendedor`
-`vendedor_id`, `fazenda_id`, `nome_vendedor`, `fisico_juridico` (`"fisico"` | `"juridico"`),
-`cpf_cnpj`, `banco`, `agencia`, `conta`, `chave_pix`
+### `pecuarista`
+`pecuarista_id`, `nome_pecuarista`, `fisico_juridico` (`"fisico"` | `"juridico"`), `cpf_cnpj`,
+`banco`, `agencia` (até 10), `conta` (até 20), `chave_pix`, `pecuarista_fazenda` (vínculos N:N, com a
+`fazenda`).
+
+`POST /pecuaristas` exige `fazendas` com pelo menos um item, cada um **ou** `{ "fazenda_id": 7 }`
+(vincula uma existente) **ou** os dados de uma fazenda nova (`nome_fazenda`, `municipio`,
+`inscricao_estadual`, `marca_url?`, `marca_escrita?`, `uuid_origem?`). Tudo é gravado numa transação;
+reenviar com o mesmo `uuid_origem` (do pecuarista e de cada fazenda nova) não duplica nada.
+`POST /pecuaristas/:id/fazendas` aceita um item no mesmo formato; vincular de novo não é erro.
+`PATCH /pecuaristas/:id` só altera os dados (não aceita mais `fazenda_ids`).
 
 ### `negocio`
 Campos enviados pelo front no `POST`/`PATCH`:
-`empresa_id`, `fazenda_id`, `marchante`, `comprador`, `modalidade` (`"arroba"` | `"kg"` | `"cabeca"`),
-`tipo_gado` (`"Gordo"` | `"Magro"`), `tipo_lote` (`"Vaca"` | `"Boi"` | `"Novilha"` | `"Garrote"` |
-`"Bezerro"` | `"Variados"`),
-`rendimento_carcaca` (número, 0–100), `data_negocio` (ISO 8601), `porcentagem_comissao` (percentual, 0–100), `valor_arroba`,
-`observacao`.
+`empresa_id`, `pecuarista_id`, `fazenda_id`, `comprador_id`, `modalidade` (`"arroba"` | `"kg"` | `"cabeca"`),
+`tipo_gado` (`"Gordo"` | `"Reposicao"`), `tipo_lote` (`"Vaca"` | `"Boi"` | `"Novilha"` | `"Garrote"` |
+`"Bezerro"` | `"Variados"`), `tipo_negocio` (`"Desconto em folha"` | `"Livre"` | `"Funrural"`),
+`media_carimbo` (texto livre, até 30 caracteres, ex.: `"8,9 e 10"`), `data_negocio` (ISO 8601), `porcentagem_comissao` (percentual, 0–100),
+`valor_unidade`, `observacao`, e os rendimentos por categoria `porcentagem_rendimento_nelore`,
+`_anelorado`, `_angus`, `_composto` (0–100, até 2 casas) — obrigatórios na modalidade `"arroba"`;
+em `"kg"`/`"cabeca"` a API grava 100 nos quatro.
+
+A fazenda precisa estar vinculada ao pecuarista (FK composta no banco): senão, `400` "A fazenda não
+pertence ao pecuarista selecionado". Mudar os rendimentos ou o `valor_unidade` recalcula todas as
+cabeças; mudar o `tipo_negocio` recalcula Funrural e Senar.
+
+**Funrural e Senar** (R$, nunca `null`), com as alíquotas da empresa copiadas para o negócio na
+criação (`aliquota_funrural`, `aliquota_senar`): `"Desconto em folha"` → só Senar;
+`"Funrural"` → só Funrural; `"Livre"` → ambos 0,00. `rendimento_medio` =
+soma(`peso_calculo`) / soma(`peso_total`) × 100.
 
 Campos que **a API calcula sozinha e retorna, mas o front não envia**: `negocio_id`, `valor_total`,
 `valor_medio`, `qtd_animais`, `mais_pesado`, `mais_leve` — são recalculados automaticamente a
@@ -186,11 +206,13 @@ negócios `"cabeca"`.
 
 ### `gado`
 Campos enviados pelo front: `negocio_id`, `peso_total`, `data_pesagem` (ISO 8601), `genero`
-(`"Macho"` | `"Femea"`), `denominacao`, `era`, `carimbo`. `horario_pesagem` é gravado pelo
-servidor no cadastro (não enviar).
+(`"Macho"` | `"Femea"`), `denominacao` (categoria: `"Nelore"` | `"Anelorado"` | `"Angus"` |
+`"Composto"`), `ano_carimbo`. `horario_pesagem` é gravado pelo servidor no cadastro (não enviar).
+`rendimento_carcaca` e `carimbo` não existem mais — enviados, dão `400`.
 
 Campos calculados pela API (não enviar): `gado_id`, `peso_calculo`, `peso_arroba`, `valor_total`
-— calculados a partir de `peso_total` e do `rendimento_carcaca` do negócio pai.
+— a partir de `peso_total` e do percentual da categoria do animal no negócio. As respostas trazem
+também `rendimento_carcaca`, **derivado** (esse percentual), só para exibição.
 
 ## 6. Tratamento de erros
 
@@ -226,9 +248,9 @@ Formato padrão de erro (Nest):
 ## Sincronização offline (PWA)
 
 Cadastros feitos sem internet ficam numa fila no aparelho (IndexedDB) e são enviados depois,
-na ordem fazenda → vendedor → comprador → negócio → atualização de negócio → gado → conclusão.
+na ordem fazenda → pecuarista → comprador → negócio → atualização de negócio → gado → conclusão.
 
-- `uuid_origem` (opcional, UUID) nos `POST` de `/fazendas`, `/vendedores`, `/compradores`,
+- `uuid_origem` (opcional, UUID) nos `POST` de `/fazendas`, `/pecuaristas`, `/compradores`,
   `/negocios` e `/gados`: se já existir um registro com esse valor, a API **devolve o existente**
   em vez de criar outro (reenvio após uma resposta perdida não duplica). Não é editável via `PATCH`.
   Requer as colunas criadas por `prisma/sql/2026-10-03-uuid-origem.sql`.
@@ -238,15 +260,24 @@ na ordem fazenda → vendedor → comprador → negócio → atualização de ne
 - `PATCH /negocios/:id/concluir` aceita no corpo `{ "hora_fim_pesagem": "HH:mm:ss" }` (hora da
   conclusão no aparelho, enviada pela fila offline). Corpo vazio: hora do servidor, como antes.
 
-## Usuários e primeiro acesso
+## Usuários
 
-- `POST /auth/login` → `{ access_token, usuario }`, com `usuario` incluindo `usuario_id`, `empresa_id`,
-  `nivel_acesso` e `primeiro_acesso` (nunca a senha). E-mail é comparado em minúsculas.
+- `POST /auth/login` → `{ access_token, usuario }`, com `usuario` incluindo `usuario_id`, `empresa_id` e
+  `nivel_acesso` (nunca a senha). E-mail é comparado em minúsculas.
 - `GET /auth/me` → dados atuais do usuário logado.
-- `PATCH /auth/primeiro-acesso/senha` `{ nova_senha }` (6–72 caracteres, diferente da atual) → conclui o
-  primeiro acesso. Enquanto `primeiro_acesso = true`, **todas as outras rotas** respondem
-  `403 { code: "PRIMEIRO_ACESSO_PENDENTE" }` (exceto esta e `GET /auth/me`).
+- A senha definida pelo administrador no cadastro vale até ser alterada (não há troca obrigatória
+  no primeiro acesso).
 - `GET/POST /usuarios`, `GET/PATCH/DELETE /usuarios/:id`: só `Admin`, só usuários da própria empresa
   (outra empresa → 404). `empresa_id` vem do admin autenticado. `senha` no `PATCH` só se preenchida.
   E-mail duplicado → 409. Não é permitido excluir a própria conta nem excluir/rebaixar o último admin (400).
 - O token é validado contra o banco a cada requisição: usuário excluído → 401; mudança de nível vale na hora.
+
+## Impostos e taxas (Funrural e Senar)
+
+- `GET /configuracoes/impostos` → `{ aliquota_funrural, aliquota_senar }` (números, em %: `1.5` = 1,5%)
+  da empresa do usuário logado (`empresa_id` vem do token).
+- `PATCH /configuracoes/impostos` `{ aliquota_funrural, aliquota_senar }` — só `Admin` (senão 403);
+  ambos obrigatórios, de 0 a 100, até 2 casas decimais.
+- Ao criar um negócio, a API copia as alíquotas da empresa para `negocio.aliquota_funrural` /
+  `negocio.aliquota_senar` (não enviar no POST/PATCH). `funrural` e `senar` (R$) são sempre calculados
+  com as alíquotas gravadas no próprio negócio: mudar a configuração só afeta negócios novos.

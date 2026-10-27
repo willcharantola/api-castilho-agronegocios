@@ -14,10 +14,21 @@ const config: Config = {
   moduleFileExtensions: ['js', 'json', 'ts'],
   rootDir: '.',
   testRegex: '.*\\.spec\\.ts$',
+  // O código do projeto vira CommonJS; o Nest 12 (ESM puro, "type": "module") NÃO é
+  // transformado: carrega como ESM nativo, o que exige rodar o Jest com
+  // --experimental-vm-modules (ver os scripts "test" do package.json).
   transform: {
-    '^.+\\.(t|j)s$': 'ts-jest',
+    '^.+\\.ts$': [
+      'ts-jest',
+      {
+        tsconfig: {
+          isolatedModules: true,
+          module: 'commonjs',
+          moduleResolution: 'bundler',
+        },
+      },
+    ],
   },
-  transformIgnorePatterns: ['node_modules/(?!(@nestjs)/)'],
   moduleNameMapper: pathsToModuleNameMapper(paths, { prefix: '<rootDir>/' }),
   collectCoverageFrom: [
     'src/**/*.(t|j)s',

@@ -24,13 +24,13 @@ O banco já existe no RDS com as tabelas abaixo (schema já criado via SQL, não
 **Tabelas e relacionamentos:**
 - `empresa` (1) → (N) `usuario`
 - `empresa` (1) → (N) `negocio`
-- `fazenda` (1) → (N) `vendedor`
+- `fazenda` (1) → (N) `pecuarista`
 - `fazenda` (1) → (N) `negocio`
 - `negocio` (1) → (N) `gado`
 
 **Campos com regras de domínio importantes (já aplicadas via CHECK no banco, mas devem ser validadas também na API antes de chegar no banco):**
 - `usuario.nivel_acesso`: apenas `"Admin"` ou `"Normal"`
-- `vendedor.fisico_juridico`: apenas `"fisico"` ou `"juridico"`
+- `pecuarista.fisico_juridico`: apenas `"fisico"` ou `"juridico"`
 - `negocio.modalidade`: apenas `"arroba"`, `"kg"` ou `"cabeca"`
 - `negocio.tipo_gado`: apenas `"Gordo"` ou `"Magro"`
 - `negocio.tipo_lote`: apenas `"Vaca"`, `"Boi"`, `"Novilha"`, `"Garrote"`, `"Bezerro"` ou `"Variados"`
@@ -49,7 +49,7 @@ src/
   usuarios/
   empresas/
   fazendas/
-  vendedores/
+  pecuaristas/
   negocios/
   gados/
   prisma/           <- módulo compartilhado com o PrismaService
@@ -66,7 +66,7 @@ Cada módulo de entidade (exceto `auth` e `prisma`) deve conter:
 
 ## Endpoints esperados (CRUD básico por entidade)
 
-Para cada entidade (`empresas`, `usuarios`, `fazendas`, `vendedores`, `negocios`, `gados`), implementar:
+Para cada entidade (`empresas`, `usuarios`, `fazendas`, `pecuaristas`, `negocios`, `gados`), implementar:
 
 - `GET /entidade` — listar todos
 - `GET /entidade/:id` — buscar um específico

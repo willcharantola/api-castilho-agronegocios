@@ -3,6 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { criarIdempotente } from '../common/idempotencia.util';
 import { handlePrismaError } from '../common/prisma-error.util';
 import { PrismaService } from '../prisma/prisma.service';
@@ -36,6 +37,22 @@ export class FazendasService {
     return registro;
   }
 
+  /**
+   * Cria uma fazenda dentro da transação do cadastro de pecuarista (a fazenda só nasce
+   * vinculada a um pecuarista). Com `uuid_origem` de um reenvio da fila offline, devolve
+   * a fazenda já criada em vez de duplicá-la.
+   */
+  async criarNaTransacao(tx: Prisma.TransactionClient, dto: CreateFazendaDto) {
+    this.validarMarcaUrl(dto.marca_url);
+    if (dto.uuid_origem) {
+      const existente = await tx.fazenda.findUnique({
+        where: { uuid_origem: dto.uuid_origem },
+      });
+      if (existente) return existente;
+    }
+    return tx.fazenda.create({ data: dto });
+  }
+
   findAll() {
     return this.prisma.fazenda.findMany();
   }
@@ -43,7 +60,7 @@ export class FazendasService {
   async findOne(fazendaId: number) {
     const fazenda = await this.prisma.fazenda.findUnique({
       where: { fazenda_id: fazendaId },
-      include: { vendedor_fazenda: { include: { vendedor: true } } },
+      include: { pecuarista_fazenda: { include: { pecuarista: true } } },
     });
     if (!fazenda) {
       throw new NotFoundException(`Fazenda ${fazendaId} não encontrada`);
@@ -68,7 +85,7 @@ export class FazendasService {
     await this.findOne(fazendaId);
     try {
       return await this.prisma.$transaction(async (tx) => {
-        await tx.vendedor_fazenda.deleteMany({
+        await tx.pecuarista_fazenda.deleteMany({
           where: { fazenda_id: fazendaId },
         });
         return tx.fazenda.delete({ where: { fazenda_id: fazendaId } });

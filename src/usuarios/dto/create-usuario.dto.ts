@@ -1,6 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
 import {
-  IsBoolean,
   IsEmail,
   IsIn,
   IsNotEmpty,
@@ -52,11 +51,4 @@ export class CreateUsuarioDto {
     message: `A senha deve ter no máximo ${SENHA_MAX} caracteres.`,
   })
   senha: string;
-
-  @ApiProperty({
-    description:
-      'Se true, o usuário precisa definir uma nova senha no próximo login.',
-  })
-  @IsBoolean()
-  primeiro_acesso: boolean;
 }
