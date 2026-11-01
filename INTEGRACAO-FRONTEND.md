@@ -127,8 +127,9 @@ Base URL: `NEXT_PUBLIC_API_URL`. Todos exigem JWT exceto os marcados como **púb
 | Usuários | `GET/POST /usuarios`, `GET/PATCH/DELETE /usuarios/:id` | **Exige `nivel_acesso: "Admin"`** em todas as rotas |
 | Fazendas | `GET /fazendas`, `GET/PATCH/DELETE /fazendas/:id` | Fazenda nova nasce dentro de um pecuarista (ver abaixo). `POST /fazendas` continua só para itens antigos da fila offline |
 | Pecuaristas | `GET/POST /pecuaristas`, `GET/PATCH/DELETE /pecuaristas/:id`, `POST /pecuaristas/:id/fazendas`, `DELETE /pecuaristas/:id/fazendas/:fazendaId` | `POST` cria pecuarista + fazendas numa transação. `DELETE` do vínculo responde `409` se houver negócio com o par |
-| Negócios | `GET/POST /negocios`, `GET/PATCH /negocios/:id`, `PATCH /negocios/:id/concluir`, `DELETE /negocios/:id` | `DELETE` **exige `Admin`**. `GET /negocios/:id` inclui os `gados` do negócio. `GET /negocios` aceita `?fazenda_id=&data_inicio=&data_fim=` |
-| Gados | `GET/POST /gados`, `GET/PATCH/DELETE /gados/:id` | Cada gado pertence a um `negocio_id` |
+| Negócios | `GET/POST /negocios`, `GET/PATCH /negocios/:id`, `PATCH /negocios/:id/concluir`, `DELETE /negocios/:id` | `DELETE` **exige `Admin`** (lotes e gados saem junto). `GET /negocios/:id` inclui os `lotes`, cada um com seus `gados`. `GET /negocios` aceita `?fazenda_id=&data_inicio=&data_fim=` |
+| Lotes | `GET/POST /negocios/:negocioId/lotes`, `GET/PATCH/DELETE /lotes/:id` | `DELETE` responde `409` se o lote tiver cabeças |
+| Gados | `GET/POST /gados`, `GET/PATCH/DELETE /gados/:id` | Cada gado pertence a um `lote_id` (e ao negócio pelo lote) |
 | Configurações | `GET /configuracoes/impostos`, `PATCH /configuracoes/impostos` | Alíquotas da empresa do usuário logado. `PATCH` **exige `Admin`** |
 
 A documentação interativa (Swagger) está em `${NEXT_PUBLIC_API_URL}/docs` — útil para explorar
@@ -148,7 +149,12 @@ usam — ajuste os `types`/`interfaces` do Next.js de acordo.
 — **`senha` nunca é retornada** pela API, só é aceita no `POST`/`PATCH`.
 
 ### `fazenda`
-`fazenda_id`, `nome_fazenda`, `municipio`, `inscricao_estadual`
+`fazenda_id`, `nome_fazenda`, `municipio`, `inscricao_estadual`, `marca_url`, `marca_escrita`,
+`endereco_fazenda` (opcional, até 200) e `localizacao_google` (opcional, até 500): link https do
+Google Maps (`www.google.com/maps`, `google.com/maps`, `maps.google.com`, `maps.app.goo.gl`,
+`goo.gl/maps`) **ou** coordenadas `"latitude,longitude"` com ponto decimal (ex.: `-20.7123,-51.6543`,
+espaço após a vírgula é aceito). Qualquer outro texto responde `400`. Os dois campos também são
+aceitos nas fazendas novas de `POST /pecuaristas` e `POST /pecuaristas/:id/fazendas`.
 
 ### `pecuarista`
 `pecuarista_id`, `nome_pecuarista`, `fisico_juridico` (`"fisico"` | `"juridico"`), `cpf_cnpj`,
@@ -157,7 +163,8 @@ usam — ajuste os `types`/`interfaces` do Next.js de acordo.
 
 `POST /pecuaristas` exige `fazendas` com pelo menos um item, cada um **ou** `{ "fazenda_id": 7 }`
 (vincula uma existente) **ou** os dados de uma fazenda nova (`nome_fazenda`, `municipio`,
-`inscricao_estadual`, `marca_url?`, `marca_escrita?`, `uuid_origem?`). Tudo é gravado numa transação;
+`inscricao_estadual`, `marca_url?`, `marca_escrita?`, `endereco_fazenda?`, `localizacao_google?`,
+`uuid_origem?`). Tudo é gravado numa transação;
 reenviar com o mesmo `uuid_origem` (do pecuarista e de cada fazenda nova) não duplica nada.
 `POST /pecuaristas/:id/fazendas` aceita um item no mesmo formato; vincular de novo não é erro.
 `PATCH /pecuaristas/:id` só altera os dados (não aceita mais `fazenda_ids`).
@@ -165,25 +172,25 @@ reenviar com o mesmo `uuid_origem` (do pecuarista e de cada fazenda nova) não d
 ### `negocio`
 Campos enviados pelo front no `POST`/`PATCH`:
 `empresa_id`, `pecuarista_id`, `fazenda_id`, `comprador_id`, `modalidade` (`"arroba"` | `"kg"` | `"cabeca"`),
-`tipo_gado` (`"Gordo"` | `"Reposicao"`), `tipo_lote` (`"Vaca"` | `"Boi"` | `"Novilha"` | `"Garrote"` |
-`"Bezerro"` | `"Variados"`), `tipo_negocio` (`"Desconto em folha"` | `"Livre"` | `"Funrural"`),
-`media_carimbo` (texto livre, até 30 caracteres, ex.: `"8,9 e 10"`), `data_negocio` (ISO 8601), `porcentagem_comissao` (percentual, 0–100),
-`valor_unidade`, `observacao`, e os rendimentos por categoria `porcentagem_rendimento_nelore`,
-`_anelorado`, `_angus`, `_composto` (0–100, até 2 casas) — obrigatórios na modalidade `"arroba"`;
-em `"kg"`/`"cabeca"` a API grava 100 nos quatro.
+`tipo_gado` (`"Gordo"` | `"Reposicao"`), `tipo_negocio` (`"Desconto em folha"` | `"Livre"` | `"Funrural"`),
+`data_negocio` (ISO 8601), `porcentagem_comissao` (percentual, 0–100), `observacao`.
+`tipo_lote`, `valor_unidade`, `media_carimbo`, os rendimentos por raça, `qtd_animais` e
+`valor_total` **não são mais aceitos** (`400`): tipo, valor, carimbo e rendimento são do lote.
 
 A fazenda precisa estar vinculada ao pecuarista (FK composta no banco): senão, `400` "A fazenda não
-pertence ao pecuarista selecionado". Mudar os rendimentos ou o `valor_unidade` recalcula todas as
-cabeças; mudar o `tipo_negocio` recalcula Funrural e Senar.
+pertence ao pecuarista selecionado". Mudar o `tipo_negocio` recalcula Funrural e Senar.
+
+Campos que **a API calcula sozinha e retorna, mas o front não envia** (a partir dos lotes e de
+todas as cabeças de todos os lotes, a cada criação/edição/exclusão de lote ou gado):
+`qtd_animais` (soma dos lotes), `valor_total` (soma de `valor_total_lote`), `valor_medio`,
+`peso_total_quilos`/`_arroba`, `peso_medio_quilos`/`_arroba`, `mais_pesado_quilos`/`_arroba`,
+`mais_leve_quilos`/`_arroba`, `rendimento_medio` = soma(`peso_calculo`) / soma(`peso_total`) × 100
+(ponderado, não a média dos lotes), `comissao`, `funrural`, `senar`. Sem cabeças, pesos e médias
+ficam `null`.
 
 **Funrural e Senar** (R$, nunca `null`), com as alíquotas da empresa copiadas para o negócio na
 criação (`aliquota_funrural`, `aliquota_senar`): `"Desconto em folha"` → só Senar;
-`"Funrural"` → só Funrural; `"Livre"` → ambos 0,00. `rendimento_medio` =
-soma(`peso_calculo`) / soma(`peso_total`) × 100.
-
-Campos que **a API calcula sozinha e retorna, mas o front não envia**: `negocio_id`, `valor_total`,
-`valor_medio`, `qtd_animais`, `mais_pesado`, `mais_leve` — são recalculados automaticamente a
-partir dos `gados` vinculados sempre que um gado é criado/editado/removido nesse negócio.
+`"Funrural"` → só Funrural; `"Livre"` → ambos 0,00.
 
 **Horários de pesagem** (registrados pelo servidor, nunca enviados pelo front — enviá-los gera 400):
 `hora_inicio_pesagem` é gravado no primeiro `POST /gados` do negócio (não é sobrescrito nos
@@ -193,26 +200,48 @@ Os horários são a **hora local do cliente**: o front envia o fuso do aparelho 
 (sem header ou com fuso inválido, usa `America/Sao_Paulo`).
 
 `comissao` (R$) é calculada pela API — `valor_total × porcentagem_comissao / 100` — e recalculada
-quando o percentual (via `PATCH /negocios/:id`) ou o valor total do negócio mudam. Fica `null`
-enquanto não houver percentual definido.
+quando o percentual ou o valor total do negócio mudam. Fica `null` enquanto não houver percentual.
 
-**Modalidade `"cabeca"`** (sem pesagem individual): nenhum `gado` é cadastrado, então
-`hora_inicio_pesagem` e `hora_fim_pesagem` ficam `null`; `valor_medio`,
-`mais_pesado` e `mais_leve` ficam `null`. A quantidade e o valor por cabeça são enviados depois via
-`PATCH /negocios/:id` com `qtd_animais` + `valor_unidade`; a API recalcula
-`valor_total = qtd_animais × valor_unidade` (um `valor_total` enviado é ignorado). `qtd_animais` no
-`PATCH` é rejeitado (400) para as outras modalidades, e `POST /gados` é rejeitado (400) para
-negócios `"cabeca"`.
+**Troca de modalidade** (`PATCH` com `modalidade`): para `"cabeca"` só com no máximo um lote e
+nenhuma cabeça (senão `400`); o lote vira "Lote único" com rendimento 100. Para `"kg"` os lotes
+passam a ter rendimento 100. As cabeças são recalculadas.
+
+### `lote`
+`POST /negocios/:negocioId/lotes` e `PATCH /lotes/:id`:
+`nome_lote` (até 30, **único no negócio** ignorando maiúsculas/minúsculas — repetido dá `400`),
+`valor_unidade` (R$/@, R$/kg ou R$/cabeça conforme a modalidade, 2 casas), `tipo_lote`
+(`"Vaca"` | `"Boi"` | `"Novilha"` | `"Garrote"` | `"Bezerro"` | `"Variados"`), `genero`
+(`"Macho"` | `"Femea"`), `rendimento_carcaca` (0–100, 2 casas), `media_carimbo` (texto livre, até 30),
+`ano_carimbo` (4 dígitos), `uuid_origem?` (só no `POST`).
+
+Regras por modalidade do negócio:
+- `"arroba"`: `nome_lote` e `rendimento_carcaca` obrigatórios.
+- `"kg"`: `nome_lote` obrigatório; a API grava `rendimento_carcaca = 100`.
+- `"cabeca"`: um único lote. Envie `qtd_animais` (inteiro ≥ 1, obrigatório) e omita o nome — a API
+  grava `"Lote único"` e rendimento 100. Um segundo `POST` dá `400`; para mudar, `PATCH /lotes/:id`.
+  `qtd_animais` nas outras modalidades dá `400`.
+
+Calculados pela API: `qtd_animais` (cabeças pesadas; em `"cabeca"`, a informada),
+`valor_total_lote` (soma das cabeças; em `"cabeca"`, `valor_unidade × qtd_animais`),
+`valor_medio_cabeca_lote`, pesos totais/médios, mais pesado/mais leve (quilos e arroba) e
+`rendimento_medio`. Mudar `rendimento_carcaca` ou `valor_unidade` recalcula as cabeças do lote, o
+lote e o negócio. `DELETE /lotes/:id` com cabeças responde `409` ("Este lote tem X cabeças
+pesadas. Remova ou mova as cabeças antes de excluir").
 
 ### `gado`
-Campos enviados pelo front: `negocio_id`, `peso_total`, `data_pesagem` (ISO 8601), `genero`
-(`"Macho"` | `"Femea"`), `denominacao` (categoria: `"Nelore"` | `"Anelorado"` | `"Angus"` |
-`"Composto"`), `ano_carimbo`. `horario_pesagem` é gravado pelo servidor no cadastro (não enviar).
-`rendimento_carcaca` e `carimbo` não existem mais — enviados, dão `400`.
+Campos enviados pelo front: `lote_id`, `peso_total`, `data_pesagem?` (ISO 8601; omitida, vale a data
+atual), `horario_pesagem?` e `uuid_origem?` (fila offline). `negocio_id`, `genero`, `denominacao`,
+`ano_carimbo`, `rendimento_carcaca` e `carimbo` não existem mais — enviados, dão `400`.
+`PATCH /gados/:id` com outro `lote_id` move a cabeça (só para lote do **mesmo negócio**, senão `400`)
+e recalcula os dois lotes. Negócio `"cabeca"` não aceita gados (`400`).
 
-Campos calculados pela API (não enviar): `gado_id`, `peso_calculo`, `peso_arroba`, `valor_total`
-— a partir de `peso_total` e do percentual da categoria do animal no negócio. As respostas trazem
-também `rendimento_carcaca`, **derivado** (esse percentual), só para exibição.
+Calculados pela API (não enviar): `gado_id`, `peso_calculo`, `peso_arroba`, `valor_total`:
+- `"arroba"`: `peso_calculo = peso_total × rendimento_carcaca do lote / 100`, `peso_arroba =
+  peso_calculo / 15`, `valor_total = peso_arroba × valor_unidade`.
+- `"kg"`: `peso_calculo = peso_total`, `peso_arroba = peso_total / 15`, `valor_total = peso_total ×
+  valor_unidade`.
+
+Lotes e gados só são visíveis/alteráveis para usuários da empresa do negócio (outra empresa → `404`).
 
 ## 6. Tratamento de erros
 
@@ -228,7 +257,7 @@ Formato padrão de erro (Nest):
 | `401` | Sem token, token inválido/expirado, ou credenciais de login erradas |
 | `403` | Usuário autenticado mas sem `nivel_acesso: "Admin"` para uma rota restrita |
 | `404` | Registro não encontrado pelo `:id` |
-| `409` | Conflito de valor único (ex: `email` de usuário já cadastrado) |
+| `409` | Conflito de valor único (ex: `email` de usuário já cadastrado) ou exclusão bloqueada (lote com cabeças, vínculo pecuarista–fazenda em uso) |
 
 ## 7. Roteiro de migração sugerido
 
@@ -248,10 +277,10 @@ Formato padrão de erro (Nest):
 ## Sincronização offline (PWA)
 
 Cadastros feitos sem internet ficam numa fila no aparelho (IndexedDB) e são enviados depois,
-na ordem fazenda → pecuarista → comprador → negócio → atualização de negócio → gado → conclusão.
+na ordem fazenda → pecuarista → comprador → negócio → atualização de negócio → lote → gado → conclusão.
 
 - `uuid_origem` (opcional, UUID) nos `POST` de `/fazendas`, `/pecuaristas`, `/compradores`,
-  `/negocios` e `/gados`: se já existir um registro com esse valor, a API **devolve o existente**
+  `/negocios`, `/negocios/:id/lotes` e `/gados`: se já existir um registro com esse valor, a API **devolve o existente**
   em vez de criar outro (reenvio após uma resposta perdida não duplica). Não é editável via `PATCH`.
   Requer as colunas criadas por `prisma/sql/2026-10-03-uuid-origem.sql`.
 - `POST /gados` com `uuid_origem` aceita `horario_pesagem` (`HH:mm` ou `HH:mm:ss`): a hora local

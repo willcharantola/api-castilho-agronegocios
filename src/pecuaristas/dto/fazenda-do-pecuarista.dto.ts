@@ -8,6 +8,7 @@ import {
   MaxLength,
   ValidateIf,
 } from 'class-validator';
+import { IsLocalizacaoGoogle } from '../../common/localizacao.util';
 
 const fazendaNova = (o: FazendaDoPecuaristaDto) => o.fazenda_id === undefined;
 
@@ -63,6 +64,30 @@ export class FazendaDoPecuaristaDto {
   @IsString()
   @MaxLength(10)
   marca_escrita?: string;
+
+  @ApiPropertyOptional({
+    maxLength: 200,
+    nullable: true,
+    description: 'Endereço da fazenda, texto livre.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  endereco_fazenda?: string | null;
+
+  @ApiPropertyOptional({
+    maxLength: 500,
+    nullable: true,
+    example: '-20.7123,-51.6543',
+    description:
+      'Link do Google Maps (https em www.google.com/maps, google.com/maps, maps.google.com, ' +
+      'maps.app.goo.gl ou goo.gl/maps) ou coordenadas "latitude,longitude" com ponto decimal.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  @IsLocalizacaoGoogle()
+  localizacao_google?: string | null;
 
   @ApiPropertyOptional({
     format: 'uuid',

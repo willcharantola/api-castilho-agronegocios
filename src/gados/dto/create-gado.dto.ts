@@ -1,32 +1,37 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsDateString,
-  IsIn,
   IsInt,
   IsNumber,
   IsOptional,
-  IsString,
   IsUUID,
   Matches,
   Min,
   ValidateIf,
 } from 'class-validator';
-import { RACAS_RENDIMENTO } from '../../common/dominio';
 import { HORA_REGEX } from '../../common/time.util';
 
 export class CreateGadoDto {
-  @ApiProperty()
+  @ApiProperty({
+    description:
+      'Lote da cabeça. O negócio é o do lote; gênero, rendimento, valor da unidade e carimbo ' +
+      'também vêm do lote.',
+  })
   @IsInt()
-  negocio_id: number;
+  lote_id: number;
 
   @ApiProperty({ minimum: 0 })
   @IsNumber()
   @Min(0)
   peso_total: number;
 
-  @ApiProperty({ example: '2026-09-09T00:00:00.000Z' })
+  @ApiPropertyOptional({
+    example: '2026-09-09T00:00:00.000Z',
+    description: 'Data da pesagem. Omitida, a API usa a data atual.',
+  })
+  @IsOptional()
   @IsDateString()
-  data_pesagem: string;
+  data_pesagem?: string;
 
   // Online, horario_pesagem é registrado pelo servidor. Só cadastros vindos da fila
   // offline (com uuid_origem) podem informá-lo: a hora local em que o gado foi pesado
@@ -41,28 +46,9 @@ export class CreateGadoDto {
   @Matches(HORA_REGEX)
   horario_pesagem?: string;
 
-  @ApiProperty({ enum: ['Macho', 'Femea'] })
-  @IsIn(['Macho', 'Femea'])
-  genero: string;
-
-  @ApiProperty({
-    enum: RACAS_RENDIMENTO,
-    description:
-      'Categoria de rendimento do animal: define qual percentual de rendimento do negócio ' +
-      'entra no cálculo (porcentagem_rendimento_nelore, _anelorado, _angus ou _composto).',
-  })
-  @IsIn(RACAS_RENDIMENTO)
-  denominacao: string;
-
-  @ApiProperty({ maxLength: 4, example: '2025' })
-  @IsString()
-  @Matches(/^\d{4}$/)
-  ano_carimbo: string;
-
   // peso_calculo, peso_arroba e valor_total são calculados no backend a partir de
-  // peso_total e do percentual de rendimento da categoria (denominacao) no negócio — não
-  // fazem parte do DTO de entrada. rendimento_carcaca e carimbo deixaram de existir: se
-  // enviados, o forbidNonWhitelisted responde 400.
+  // peso_total e do lote. negocio_id, genero, denominacao, ano_carimbo, rendimento_carcaca
+  // e carimbo deixaram de existir no gado: se enviados, o forbidNonWhitelisted responde 400.
 
   @ApiPropertyOptional({
     format: 'uuid',
