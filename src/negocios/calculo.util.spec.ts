@@ -1,18 +1,24 @@
 import {
+  agregarPesos,
   arredondarCentavos,
+  calcularGado,
   calcularImpostos,
+  calcularLote,
+  calcularNegocio,
   calcularRendimentoMedio,
-  calcularValoresGado,
-  rendimentoDaRaca,
-  type RendimentosNegocio,
+  type GadoCalculado,
 } from './calculo.util';
 
-const RENDIMENTOS: RendimentosNegocio = {
-  porcentagem_rendimento_nelore: 52.5,
-  porcentagem_rendimento_anelorado: 51,
-  porcentagem_rendimento_angus: 55,
-  porcentagem_rendimento_composto: 53.25,
-};
+/** Gado como gravado: valores do cálculo + o peso informado. */
+const gado = (
+  modalidade: string,
+  peso: number,
+  rendimento: number,
+  valorUnidade: number,
+): GadoCalculado => ({
+  peso_total: peso,
+  ...calcularGado(modalidade, peso, rendimento, valorUnidade),
+});
 
 describe('calcularImpostos', () => {
   it('Desconto em folha: só Senar', () => {
@@ -79,23 +85,10 @@ describe('arredondarCentavos', () => {
   });
 });
 
-describe('rendimentoDaRaca', () => {
-  it('lê a coluna da categoria do animal', () => {
-    expect(rendimentoDaRaca(RENDIMENTOS, 'Nelore')).toBe(52.5);
-    expect(rendimentoDaRaca(RENDIMENTOS, 'Anelorado')).toBe(51);
-    expect(rendimentoDaRaca(RENDIMENTOS, 'Angus')).toBe(55);
-    expect(rendimentoDaRaca(RENDIMENTOS, 'Composto')).toBe(53.25);
-  });
-
-  it('rejeita categoria fora das quatro', () => {
-    expect(() => rendimentoDaRaca(RENDIMENTOS, 'Cruzado')).toThrow();
-  });
-});
-
-describe('calcularValoresGado', () => {
-  it('arroba: peso × rendimento da raça / 15 × valor da arroba', () => {
+describe('calcularGado', () => {
+  it('arroba: peso × rendimento do lote / 15 × valor da arroba', () => {
     // 500 kg × 52,5% = 262,5 kg → 17,5 @ × R$ 300 = R$ 5.250,00
-    expect(calcularValoresGado('arroba', 500, 52.5, 300)).toEqual({
+    expect(calcularGado('arroba', 500, 52.5, 300)).toEqual({
       peso_calculo: 262.5,
       peso_arroba: 17.5,
       valor_total: 5250,
@@ -104,14 +97,14 @@ describe('calcularValoresGado', () => {
 
   it('arroba: arrobas sem arredondar; valor arredondado só no fim', () => {
     // 431 × 53,25% = 229,5075 kg → 15,3005 @ × 287,5 = 4.398,89375
-    const v = calcularValoresGado('arroba', 431, 53.25, 287.5);
+    const v = calcularGado('arroba', 431, 53.25, 287.5);
     expect(v.peso_calculo).toBeCloseTo(229.5075, 10);
     expect(v.peso_arroba).toBeCloseTo(15.3005, 10);
     expect(v.valor_total).toBe(4398.89);
   });
 
-  it('kg: rendimento neutro (100) e valor por quilo', () => {
-    expect(calcularValoresGado('kg', 420, 100, 10.5)).toEqual({
+  it('kg: peso_calculo = peso_total (ignora rendimento) e valor por quilo', () => {
+    expect(calcularGado('kg', 420, 52, 10.5)).toEqual({
       peso_calculo: 420,
       peso_arroba: 28,
       valor_total: 4410,
@@ -119,21 +112,131 @@ describe('calcularValoresGado', () => {
   });
 
   it('cabeca não tem cálculo por animal', () => {
-    expect(() => calcularValoresGado('cabeca', 1, 100, 1)).toThrow();
+    expect(() => calcularGado('cabeca', 1, 100, 1)).toThrow();
   });
 });
 
 describe('calcularRendimentoMedio', () => {
   it('é ponderado pelo peso (não a média simples dos percentuais)', () => {
-    const gados = [
-      calcularValoresGado('arroba', 600, 55, 300), // Angus
-      calcularValoresGado('arroba', 300, 51, 300), // Anelorado
-    ].map((v, i) => ({ ...v, peso_total: [600, 300][i] }));
+    const gados = [gado('arroba', 600, 55, 300), gado('arroba', 300, 51, 300)];
     // (330 + 153) / 900 × 100 = 53,666…
     expect(calcularRendimentoMedio(gados)).toBeCloseTo(53.6667, 4);
   });
 
   it('null sem gados', () => {
     expect(calcularRendimentoMedio([])).toBeNull();
+  });
+});
+
+describe('agregarPesos', () => {
+  it('totais, médias e extremos em quilos e em arrobas', () => {
+    const r = agregarPesos([
+      gado('arroba', 500, 52.5, 300), // 17,5 @
+      gado('arroba', 400, 52.5, 300), // 14 @
+    ]);
+    expect(r).toMatchObject({
+      peso_total_quilos: 900,
+      peso_medio_quilos: 450,
+      mais_pesado_quilos: 500,
+      mais_leve_quilos: 400,
+      mais_pesado_arroba: 17.5,
+      mais_leve_arroba: 14,
+    });
+    expect(r.peso_total_arroba).toBeCloseTo(31.5, 10);
+    expect(r.peso_medio_arroba).toBeCloseTo(15.75, 10);
+    expect(r.rendimento_medio).toBeCloseTo(52.5, 10);
+  });
+
+  it('tudo null sem gados', () => {
+    expect(Object.values(agregarPesos([])).every((v) => v === null)).toBe(true);
+  });
+});
+
+describe('calcularLote', () => {
+  it('arroba: quantidade e valor vêm das cabeças do lote', () => {
+    const gados = [gado('arroba', 500, 52.5, 300), gado('arroba', 400, 52.5, 300)];
+    // 5.250,00 + 4.200,00
+    expect(
+      calcularLote('arroba', { valor_unidade: 300, qtd_animais: 0 }, gados),
+    ).toMatchObject({
+      qtd_animais: 2,
+      valor_total_lote: 9450,
+      valor_medio_cabeca_lote: 4725,
+      peso_total_quilos: 900,
+    });
+  });
+
+  it('kg: soma dos valores por quilo', () => {
+    const gados = [gado('kg', 250, 100, 14.5), gado('kg', 230, 100, 14.5)];
+    expect(
+      calcularLote('kg', { valor_unidade: 14.5, qtd_animais: 0 }, gados),
+    ).toMatchObject({
+      qtd_animais: 2,
+      valor_total_lote: 6960,
+      valor_medio_cabeca_lote: 3480,
+      rendimento_medio: 100,
+    });
+  });
+
+  it('lote sem cabeças: zero e médias/pesos null', () => {
+    expect(
+      calcularLote('arroba', { valor_unidade: 300, qtd_animais: 0 }, []),
+    ).toMatchObject({
+      qtd_animais: 0,
+      valor_total_lote: 0,
+      valor_medio_cabeca_lote: null,
+      peso_total_quilos: null,
+      rendimento_medio: null,
+    });
+  });
+
+  it('cabeca: quantidade informada × valor por cabeça, sem pesos', () => {
+    expect(
+      calcularLote('cabeca', { valor_unidade: 2500.5, qtd_animais: 30 }, []),
+    ).toMatchObject({
+      qtd_animais: 30,
+      valor_total_lote: 75015,
+      valor_medio_cabeca_lote: 2500.5,
+      peso_total_quilos: null,
+      mais_pesado_quilos: null,
+    });
+  });
+});
+
+describe('calcularNegocio', () => {
+  it('soma os lotes e pondera o rendimento por peso entre lotes diferentes', () => {
+    const loteA = [gado('arroba', 600, 55, 300)]; // 330 kg de carcaça, R$ 6.600,00
+    const loteB = [gado('arroba', 300, 51, 290)]; // 153 kg de carcaça, R$ 2.958,00
+    const agA = calcularLote('arroba', { valor_unidade: 300, qtd_animais: 0 }, loteA);
+    const agB = calcularLote('arroba', { valor_unidade: 290, qtd_animais: 0 }, loteB);
+    const r = calcularNegocio([agA, agB], [...loteA, ...loteB]);
+
+    expect(r.qtd_animais).toBe(2);
+    expect(r.valor_total).toBe(9558);
+    expect(r.valor_medio).toBe(4779);
+    expect(r.peso_total_quilos).toBe(900);
+    expect(r.mais_pesado_quilos).toBe(600);
+    expect(r.mais_leve_quilos).toBe(300);
+    // (330 + 153) / 900 × 100 = 53,67 — não a média dos rendimentos dos lotes (53).
+    expect(r.rendimento_medio).toBeCloseTo(53.6667, 4);
+  });
+
+  it('sem lotes: zero e médias null', () => {
+    expect(calcularNegocio([], [])).toMatchObject({
+      qtd_animais: 0,
+      valor_total: 0,
+      valor_medio: null,
+      rendimento_medio: null,
+    });
+  });
+
+  it('cabeca: valor e quantidade do lote único, sem pesos', () => {
+    const lote = calcularLote('cabeca', { valor_unidade: 3000, qtd_animais: 10 }, []);
+    expect(calcularNegocio([lote], [])).toMatchObject({
+      qtd_animais: 10,
+      valor_total: 30000,
+      valor_medio: 3000,
+      peso_total_quilos: null,
+    });
   });
 });

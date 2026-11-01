@@ -1,15 +1,9 @@
 import { BadRequestException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import {
-  COLUNA_RENDIMENTO,
-  RACAS_RENDIMENTO,
-  type ColunaRendimento,
-  type RacaRendimento,
-  type TipoNegocio,
-} from '../common/dominio';
+import { type TipoNegocio } from '../common/dominio';
 
-// Funções puras dos cálculos do negócio e do gado (sem acesso ao banco), testadas em
-// calculo.util.spec.ts. Pesos e arrobas não são arredondados nos passos intermediários;
+// Funções puras dos cálculos do gado, do lote e do negócio (sem acesso ao banco), testadas
+// em calculo.util.spec.ts. Pesos e arrobas não são arredondados nos passos intermediários;
 // valores em R$ só no resultado final.
 
 const KG_POR_ARROBA = 15;
@@ -58,26 +52,6 @@ export function calcularComissao(valorTotal: number, porcentagem: number) {
   return arredondarCentavos((valorTotal * porcentagem) / 100);
 }
 
-/** Os quatro percentuais de rendimento do negócio, já como number. */
-export type RendimentosNegocio = Record<ColunaRendimento, number>;
-
-export function ehRacaRendimento(valor: string): valor is RacaRendimento {
-  return (RACAS_RENDIMENTO as readonly string[]).includes(valor);
-}
-
-/** Percentual de rendimento da categoria do animal (gado.denominacao) no negócio. */
-export function rendimentoDaRaca(
-  rendimentos: RendimentosNegocio,
-  denominacao: string,
-): number {
-  if (!ehRacaRendimento(denominacao)) {
-    throw new BadRequestException(
-      `Categoria de rendimento inválida: ${denominacao}`,
-    );
-  }
-  return rendimentos[COLUNA_RENDIMENTO[denominacao]];
-}
-
 export interface ValoresGado {
   peso_calculo: number;
   peso_arroba: number;
@@ -85,31 +59,31 @@ export interface ValoresGado {
 }
 
 /**
- * Valores de um animal. `rendimento` é o percentual da categoria do animal no negócio
- * (na modalidade "kg" o negócio grava 100, então peso_calculo = peso_total).
- * - arroba: valor = arrobas × valor_unidade
- * - kg:     valor = peso_total × valor_unidade
+ * Valores de um animal a partir do peso e dos dados do lote dele.
+ * - arroba: peso_calculo = peso × rendimento / 100; valor = arrobas × valor_unidade
+ * - kg:     peso_calculo = peso (sem rendimento);   valor = peso × valor_unidade
  * "cabeca" não tem registros individuais de gado.
  */
-export function calcularValoresGado(
+export function calcularGado(
   modalidade: string,
   pesoTotal: number,
   rendimento: number,
   valorUnidade: number,
 ): ValoresGado {
-  const peso_calculo = (pesoTotal * rendimento) / 100;
-  const peso_arroba = peso_calculo / KG_POR_ARROBA;
   switch (modalidade) {
-    case 'arroba':
+    case 'arroba': {
+      const peso_calculo = (pesoTotal * rendimento) / 100;
+      const peso_arroba = peso_calculo / KG_POR_ARROBA;
       return {
         peso_calculo,
         peso_arroba,
         valor_total: arredondarCentavos(peso_arroba * valorUnidade),
       };
+    }
     case 'kg':
       return {
-        peso_calculo,
-        peso_arroba,
+        peso_calculo: pesoTotal,
+        peso_arroba: pesoTotal / KG_POR_ARROBA,
         valor_total: arredondarCentavos(pesoTotal * valorUnidade),
       };
     default:
@@ -119,15 +93,138 @@ export function calcularValoresGado(
   }
 }
 
+/** Gado já gravado, com os Decimal convertidos em number. */
+export interface GadoCalculado {
+  peso_total: number;
+  peso_calculo: number;
+  peso_arroba: number;
+  valor_total: number;
+}
+
+/** Pesos, médias, extremos e rendimento médio de um conjunto de gados (lote ou negócio). */
+export interface AgregadosPeso {
+  peso_total_quilos: number | null;
+  peso_total_arroba: number | null;
+  peso_medio_quilos: number | null;
+  peso_medio_arroba: number | null;
+  mais_pesado_quilos: number | null;
+  mais_leve_quilos: number | null;
+  mais_pesado_arroba: number | null;
+  mais_leve_arroba: number | null;
+  rendimento_medio: number | null;
+}
+
+const SEM_PESOS: AgregadosPeso = {
+  peso_total_quilos: null,
+  peso_total_arroba: null,
+  peso_medio_quilos: null,
+  peso_medio_arroba: null,
+  mais_pesado_quilos: null,
+  mais_leve_quilos: null,
+  mais_pesado_arroba: null,
+  mais_leve_arroba: null,
+  rendimento_medio: null,
+};
+
+const somar = <T>(itens: T[], valor: (item: T) => number) =>
+  itens.reduce((soma, item) => soma + valor(item), 0);
+
 /**
- * Rendimento médio do lote, ponderado pelo peso: SUM(peso_calculo) / SUM(peso_total) × 100.
- * null sem gados (ou peso total zero) — nunca divide por zero.
+ * Rendimento médio ponderado pelo peso: SUM(peso_calculo) / SUM(peso_total) × 100 — não a
+ * média dos rendimentos. null sem gados (ou peso total zero): nunca divide por zero.
  */
 export function calcularRendimentoMedio(
   gados: { peso_calculo: number; peso_total: number }[],
 ): number | null {
-  const pesoTotal = gados.reduce((soma, g) => soma + g.peso_total, 0);
+  const pesoTotal = somar(gados, (g) => g.peso_total);
   if (!(pesoTotal > 0)) return null;
-  const pesoCalculo = gados.reduce((soma, g) => soma + g.peso_calculo, 0);
-  return (pesoCalculo / pesoTotal) * 100;
+  return (somar(gados, (g) => g.peso_calculo) / pesoTotal) * 100;
+}
+
+/** Agregados de peso; tudo null sem gados (modalidade "cabeca" ou lote ainda vazio). */
+export function agregarPesos(gados: GadoCalculado[]): AgregadosPeso {
+  if (gados.length === 0) return SEM_PESOS;
+  const quilos = gados.map((g) => g.peso_total);
+  const arrobas = gados.map((g) => g.peso_arroba);
+  const pesoTotalQuilos = somar(quilos, (p) => p);
+  const pesoTotalArroba = somar(arrobas, (p) => p);
+  return {
+    peso_total_quilos: pesoTotalQuilos,
+    peso_total_arroba: pesoTotalArroba,
+    peso_medio_quilos: pesoTotalQuilos / gados.length,
+    peso_medio_arroba: pesoTotalArroba / gados.length,
+    mais_pesado_quilos: Math.max(...quilos),
+    mais_leve_quilos: Math.min(...quilos),
+    mais_pesado_arroba: Math.max(...arrobas),
+    mais_leve_arroba: Math.min(...arrobas),
+    rendimento_medio: calcularRendimentoMedio(gados),
+  };
+}
+
+export interface AgregadosLote extends AgregadosPeso {
+  qtd_animais: number;
+  valor_total_lote: number;
+  valor_medio_cabeca_lote: number | null;
+}
+
+/**
+ * Agregados de um lote. Com pesagem (arroba/kg), quantidade e valor vêm dos gados do lote;
+ * na modalidade "cabeca" não há gados: a quantidade é a informada e o valor é
+ * valor_unidade × qtd_animais.
+ */
+export function calcularLote(
+  modalidade: string,
+  lote: { valor_unidade: number; qtd_animais: number },
+  gados: GadoCalculado[],
+): AgregadosLote {
+  if (modalidade === 'cabeca') {
+    const valorTotal = arredondarCentavos(
+      lote.valor_unidade * lote.qtd_animais,
+    );
+    return {
+      ...SEM_PESOS,
+      qtd_animais: lote.qtd_animais,
+      valor_total_lote: valorTotal,
+      valor_medio_cabeca_lote:
+        lote.qtd_animais > 0
+          ? arredondarCentavos(valorTotal / lote.qtd_animais)
+          : null,
+    };
+  }
+  const valorTotal = arredondarCentavos(somar(gados, (g) => g.valor_total));
+  return {
+    ...agregarPesos(gados),
+    qtd_animais: gados.length,
+    valor_total_lote: valorTotal,
+    valor_medio_cabeca_lote:
+      gados.length > 0 ? arredondarCentavos(valorTotal / gados.length) : null,
+  };
+}
+
+export interface AgregadosNegocio extends AgregadosPeso {
+  qtd_animais: number;
+  valor_total: number;
+  valor_medio: number | null;
+}
+
+/**
+ * Agregados do negócio: quantidade e valor somam os lotes; pesos, extremos e rendimento
+ * médio são calculados sobre o conjunto de gados de todos os lotes (rendimento ponderado,
+ * não a média dos rendimentos dos lotes).
+ */
+export function calcularNegocio(
+  lotes: { qtd_animais: number; valor_total_lote: number }[],
+  gados: GadoCalculado[],
+): AgregadosNegocio {
+  const qtdAnimais = somar(lotes, (l) => l.qtd_animais);
+  const valorTotal = arredondarCentavos(
+    somar(lotes, (l) => l.valor_total_lote),
+  );
+  return {
+    ...agregarPesos(gados),
+    qtd_animais: qtdAnimais,
+    valor_total: valorTotal,
+    valor_medio:
+      qtdAnimais > 0 ? arredondarCentavos(valorTotal / qtdAnimais) : null,
+  };
 }

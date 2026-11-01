@@ -16,31 +16,16 @@ export const TIPOS_LOTE = [
   'Bezerro',
   'Variados',
 ] as const;
+export type TipoLote = (typeof TIPOS_LOTE)[number];
+
+export const GENEROS = ['Macho', 'Femea'] as const;
+export type Genero = (typeof GENEROS)[number];
 
 export const TIPOS_NEGOCIO = ['Desconto em folha', 'Livre', 'Funrural'] as const;
 export type TipoNegocio = (typeof TIPOS_NEGOCIO)[number];
 
-/** Categorias de rendimento de carcaça — gravadas em `gado.denominacao`. */
-export const RACAS_RENDIMENTO = [
-  'Nelore',
-  'Anelorado',
-  'Angus',
-  'Composto',
-] as const;
-export type RacaRendimento = (typeof RACAS_RENDIMENTO)[number];
-
-/** Coluna de `negocio` com o percentual de rendimento de cada categoria. */
-export const COLUNA_RENDIMENTO = {
-  Nelore: 'porcentagem_rendimento_nelore',
-  Anelorado: 'porcentagem_rendimento_anelorado',
-  Angus: 'porcentagem_rendimento_angus',
-  Composto: 'porcentagem_rendimento_composto',
-} as const satisfies Record<RacaRendimento, string>;
-
-export type ColunaRendimento =
-  (typeof COLUNA_RENDIMENTO)[RacaRendimento];
-
-export const COLUNAS_RENDIMENTO = Object.values(COLUNA_RENDIMENTO);
-
-/** Rendimento neutro (peso_calculo = peso_total) gravado nas modalidades "kg" e "cabeca". */
+/** Rendimento neutro (peso_calculo = peso_total) gravado nos lotes das modalidades "kg" e "cabeca". */
 export const RENDIMENTO_NEUTRO = 100;
+
+/** Nome do lote criado automaticamente nos negócios da modalidade "cabeca". */
+export const NOME_LOTE_UNICO = 'Lote único';

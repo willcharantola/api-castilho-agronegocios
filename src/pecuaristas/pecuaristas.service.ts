@@ -182,6 +182,8 @@ export class PecuaristasService {
           inscricao_estadual: dados.inscricao_estadual!,
           marca_url: dados.marca_url,
           marca_escrita: dados.marca_escrita,
+          endereco_fazenda: dados.endereco_fazenda,
+          localizacao_google: dados.localizacao_google,
           uuid_origem: dados.uuid_origem,
         });
         fazendaIds.push(fazenda.fazenda_id);

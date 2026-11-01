@@ -12,6 +12,7 @@ import { ConfiguracoesModule } from './configuracoes/configuracoes.module';
 import { EmpresasModule } from './empresas/empresas.module';
 import { FazendasModule } from './fazendas/fazendas.module';
 import { GadosModule } from './gados/gados.module';
+import { LotesModule } from './lotes/lotes.module';
 import { NegociosModule } from './negocios/negocios.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { UsuariosModule } from './usuarios/usuarios.module';
@@ -28,6 +29,7 @@ import { PecuaristasModule } from './pecuaristas/pecuaristas.module';
     PecuaristasModule,
     CompradoresModule,
     NegociosModule,
+    LotesModule,
     GadosModule,
     UploadsModule,
     ConfiguracoesModule,

@@ -5,9 +5,8 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import {
-  COLUNAS_RENDIMENTO,
+  NOME_LOTE_UNICO,
   RENDIMENTO_NEUTRO,
-  type ColunaRendimento,
   type TipoNegocio,
 } from '../common/dominio';
 import { criarIdempotente } from '../common/idempotencia.util';
@@ -15,14 +14,13 @@ import { handlePrismaError } from '../common/prisma-error.util';
 import { horaAtual, horaParaDate } from '../common/time.util';
 import { PrismaService } from '../prisma/prisma.service';
 import {
-  arredondarCentavos,
   calcularComissao,
+  calcularGado,
   calcularImpostos,
-  calcularRendimentoMedio,
-  calcularValoresGado,
-  rendimentoDaRaca,
-  ehRacaRendimento,
-  type RendimentosNegocio,
+  calcularLote,
+  calcularNegocio,
+  type AgregadosLote,
+  type GadoCalculado,
 } from './calculo.util';
 import { CreateNegocioDto } from './dto/create-negocio.dto';
 import { UpdateNegocioDto } from './dto/update-negocio.dto';
@@ -35,51 +33,41 @@ const SELECT_ALIQUOTAS = {
   aliquota_senar: true,
 } as const;
 
-const SELECT_RENDIMENTOS = {
-  porcentagem_rendimento_nelore: true,
-  porcentagem_rendimento_anelorado: true,
-  porcentagem_rendimento_angus: true,
-  porcentagem_rendimento_composto: true,
-} as const;
-
-/** Tudo o que recalcularAgregados()/recalcularGados() leem do negócio. */
+/** Tudo o que recalcular() lê do negócio. */
 const SELECT_CALCULO = {
   empresa_id: true,
   modalidade: true,
-  valor_unidade: true,
-  qtd_animais: true,
   tipo_negocio: true,
   porcentagem_comissao: true,
   ...SELECT_ALIQUOTAS,
-  ...SELECT_RENDIMENTOS,
 } as const;
+
+/** Lotes em ordem de cadastro, cada um com suas cabeças em ordem de cadastro. */
+const INCLUDE_LOTES = {
+  lotes: {
+    orderBy: { lote_id: 'asc' },
+    include: { gados: { orderBy: { gado_id: 'asc' } } },
+  },
+} as const satisfies Prisma.negocioInclude;
 
 export const MENSAGEM_FAZENDA_DE_OUTRO_PECUARISTA =
   'A fazenda não pertence ao pecuarista selecionado';
 
-/** Os quatro percentuais do negócio (Decimal do Prisma) como number. */
-export function rendimentosDoNegocio(
-  negocio: Record<ColunaRendimento, Prisma.Decimal>,
-): RendimentosNegocio {
-  return Object.fromEntries(
-    COLUNAS_RENDIMENTO.map((coluna) => [coluna, negocio[coluna].toNumber()]),
-  ) as RendimentosNegocio;
-}
+export const MENSAGEM_TROCA_PARA_CABECA =
+  'Para mudar para "Por cabeça" o negócio precisa ter no máximo um lote e nenhuma cabeça pesada';
 
-/**
- * Acrescenta à resposta o campo derivado `rendimento_carcaca` (percentual da categoria do
- * animal no negócio). Não é coluna nem aceito em escrita — existe só para o front e o
- * romaneio continuarem exibindo o rendimento por cabeça.
- */
-export function comRendimentoDerivado<T extends { denominacao: string }>(
-  gado: T,
-  rendimentos: RendimentosNegocio,
-): T & { rendimento_carcaca: number | null } {
+/** Gado gravado (Decimal do Prisma) no formato das funções de cálculo. */
+export function gadoParaCalculo(gado: {
+  peso_total: Prisma.Decimal;
+  peso_calculo: Prisma.Decimal;
+  peso_arroba: Prisma.Decimal;
+  valor_total: Prisma.Decimal;
+}): GadoCalculado {
   return {
-    ...gado,
-    rendimento_carcaca: ehRacaRendimento(gado.denominacao)
-      ? rendimentoDaRaca(rendimentos, gado.denominacao)
-      : null,
+    peso_total: gado.peso_total.toNumber(),
+    peso_calculo: gado.peso_calculo.toNumber(),
+    peso_arroba: gado.peso_arroba.toNumber(),
+    valor_total: gado.valor_total.toNumber(),
   };
 }
 
@@ -88,10 +76,6 @@ export class NegociosService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(dto: CreateNegocioDto) {
-    // Na modalidade "cabeca" não há pesagem física: os agregados de peso ficam NULL
-    // e qtd_animais/valor_total são informados depois via PATCH /negocios/:id.
-    const porCabeca = dto.modalidade === 'cabeca';
-    const rendimentos = this.rendimentosParaGravar(dto.modalidade, dto);
     await this.garantirVinculo(dto.pecuarista_id, dto.fazenda_id);
 
     const { registro } = await criarIdempotente(
@@ -109,23 +93,19 @@ export class NegociosService {
         return this.prisma.negocio.create({
           data: {
             ...dto,
-            ...rendimentos,
             ...aliquotas,
             data_negocio: new Date(dto.data_negocio),
-            // Ainda não há gados (valor_total = 0), então a comissão em R$ começa em 0
-            // e é recalculada por recalcularAgregados() conforme o valor total muda.
+            // Ainda não há lotes (valor_total = 0), então a comissão em R$ começa em 0
+            // e é recalculada por recalcular() conforme o valor total muda.
             comissao: dto.porcentagem_comissao != null ? 0 : null,
             // Preenchidos pelo servidor: hora_inicio_pesagem no primeiro gado cadastrado
             // (GadosService.create) e hora_fim_pesagem ao concluir o cadastro (concluir()).
             hora_inicio_pesagem: null,
             hora_fim_pesagem: null,
-            // Agregados sobre os gados do negócio — recalculados por recalcularAgregados()
-            // conforme gados são criados/atualizados/removidos. Não existem gados ainda na criação.
+            // NOT NULL no banco: começam em 0 e são preenchidos pelo recálculo a partir dos
+            // lotes. Pesos, médias, extremos e rendimento médio ficam NULL até haver gados.
             valor_total: 0,
-            valor_medio: porCabeca ? null : 0,
             qtd_animais: 0,
-            mais_pesado: porCabeca ? null : 0,
-            mais_leve: porCabeca ? null : 0,
             // valor_total = 0 → funrural e senar 0,00 (nunca NULL).
             ...calcularImpostos(
               0,
@@ -133,7 +113,6 @@ export class NegociosService {
               aliquotas.aliquota_funrural,
               aliquotas.aliquota_senar,
             ),
-            // Pesos e rendimento médio ficam NULL até haver gados (recalcularAgregados()).
           },
         });
       },
@@ -166,7 +145,7 @@ export class NegociosService {
     const negocio = await this.prisma.negocio.findUnique({
       where: { negocio_id: negocioId },
       include: {
-        gados: true,
+        ...INCLUDE_LOTES,
         comprador: true,
         pecuarista: true,
         fazenda: true,
@@ -175,56 +154,41 @@ export class NegociosService {
     if (!negocio) {
       throw new NotFoundException(`Negócio ${negocioId} não encontrado`);
     }
-    const rendimentos = rendimentosDoNegocio(negocio);
-    return {
-      ...negocio,
-      gados: negocio.gados.map((gado) =>
-        comRendimentoDerivado(gado, rendimentos),
-      ),
-    };
+    return negocio;
+  }
+
+  /**
+   * Negócio que o usuário pode alterar: o de outra empresa responde 404 (como se não
+   * existisse), para não revelar dados de outras empresas.
+   */
+  async negocioDaEmpresa(negocioId: number, empresaId: number) {
+    const negocio = await this.prisma.negocio.findUnique({
+      where: { negocio_id: negocioId },
+      select: { negocio_id: true, empresa_id: true, modalidade: true },
+    });
+    if (!negocio || negocio.empresa_id !== empresaId) {
+      throw new NotFoundException(`Negócio ${negocioId} não encontrado`);
+    }
+    return negocio;
   }
 
   async update(negocioId: number, dto: UpdateNegocioDto) {
     const atual = await this.findOne(negocioId);
-    // valor_total nunca é aceito do cliente — cálculo autoritativo no servidor.
-    const { valor_total: _valorTotalIgnorado, ...campos } = dto;
-    const modalidade = campos.modalidade ?? atual.modalidade;
-
-    // qtd_animais só pode ser informado diretamente na modalidade "cabeca"; nas demais
-    // é um agregado dos registros de `gado` (ver recalcularAgregados()).
-    if (campos.qtd_animais !== undefined && modalidade !== 'cabeca') {
-      throw new BadRequestException(
-        `qtd_animais só pode ser informado para negócios da modalidade "cabeca" ` +
-          `(negócio ${negocioId} é "${modalidade}")`,
-      );
-    }
+    const modalidade = dto.modalidade ?? atual.modalidade;
     const trocouModalidade = modalidade !== atual.modalidade;
-    if (trocouModalidade && atual.gados.length > 0) {
-      throw new BadRequestException(
-        'Não é possível trocar a modalidade de um negócio que já tem gados cadastrados',
-      );
+    const qtdGados = atual.lotes.reduce((soma, l) => soma + l.gados.length, 0);
+
+    // "cabeca" tem um único lote e nenhuma pesagem individual.
+    if (
+      trocouModalidade &&
+      modalidade === 'cabeca' &&
+      (atual.lotes.length > 1 || qtdGados > 0)
+    ) {
+      throw new BadRequestException(MENSAGEM_TROCA_PARA_CABECA);
     }
 
-    // Percentuais ausentes no PATCH continuam os gravados (se o negócio já era "arroba").
-    const rendimentosAtuais = rendimentosDoNegocio(atual);
-    const rendimentos = this.rendimentosParaGravar(
-      modalidade,
-      Object.fromEntries(
-        COLUNAS_RENDIMENTO.map((coluna) => [
-          coluna,
-          campos[coluna] ??
-            (atual.modalidade === 'arroba'
-              ? rendimentosAtuais[coluna]
-              : undefined),
-        ]),
-      ),
-    );
-    const mudouRendimento = COLUNAS_RENDIMENTO.some(
-      (coluna) => rendimentos[coluna] !== rendimentosAtuais[coluna],
-    );
-
-    const pecuaristaId = campos.pecuarista_id ?? atual.pecuarista_id;
-    const fazendaId = campos.fazenda_id ?? atual.fazenda_id;
+    const pecuaristaId = dto.pecuarista_id ?? atual.pecuarista_id;
+    const fazendaId = dto.fazenda_id ?? atual.fazenda_id;
     if (
       pecuaristaId !== atual.pecuarista_id ||
       fazendaId !== atual.fazenda_id
@@ -232,27 +196,20 @@ export class NegociosService {
       await this.garantirVinculo(pecuaristaId, fazendaId);
     }
 
-    // Os valores de cada animal dependem do rendimento da raça e do valor por unidade.
-    const recalcularAnimais =
-      modalidade !== 'cabeca' &&
-      (mudouRendimento ||
-        trocouModalidade ||
-        (campos.valor_unidade !== undefined &&
-          campos.valor_unidade !== atual.valor_unidade.toNumber()));
-
     try {
       await this.prisma.$transaction(async (tx) => {
         await tx.negocio.update({
           where: { negocio_id: negocioId },
           data: {
-            ...campos,
-            ...rendimentos,
-            ...(campos.data_negocio
-              ? { data_negocio: new Date(campos.data_negocio) }
+            ...dto,
+            ...(dto.data_negocio
+              ? { data_negocio: new Date(dto.data_negocio) }
               : {}),
           },
         });
-        if (recalcularAnimais) await this.recalcularGados(tx, negocioId);
+        if (trocouModalidade) {
+          await this.ajustarLotesAModalidade(tx, negocioId, modalidade);
+        }
         // valor_total, comissão, Funrural e Senar (dependem do tipo_negocio e do valor).
         await this.recalcular(tx, negocioId);
       });
@@ -289,8 +246,12 @@ export class NegociosService {
    * operação atômica: cadastros simultâneos não sobrescrevem o valor. `horario` é o
    * horario_pesagem do gado (hora do aparelho, quando veio da fila offline).
    */
-  async registrarInicioPesagem(negocioId: number, horario: Date) {
-    await this.prisma.negocio.updateMany({
+  async registrarInicioPesagem(
+    tx: Prisma.TransactionClient,
+    negocioId: number,
+    horario: Date,
+  ) {
+    await tx.negocio.updateMany({
       where: { negocio_id: negocioId, hora_inicio_pesagem: null },
       data: { hora_inicio_pesagem: horario },
     });
@@ -299,6 +260,7 @@ export class NegociosService {
   async remove(negocioId: number) {
     await this.findOne(negocioId);
     try {
+      // Lotes e gados saem junto (ON DELETE CASCADE).
       return await this.prisma.negocio.delete({
         where: { negocio_id: negocioId },
       });
@@ -308,57 +270,122 @@ export class NegociosService {
   }
 
   /**
-   * Recalcula os agregados do negócio (valor_total, valor_medio, qtd_animais,
-   * mais_pesado, mais_leve, comissao) e os campos do romaneio (pesos totais e
-   * médios, rendimento médio, funrural, senar), numa única transação e num único UPDATE.
-   * Chamado pelo GadosService sempre que um gado é criado, atualizado ou removido.
+   * Recalcula peso_calculo, peso_arroba e valor_total de todas as cabeças do lote, a partir
+   * do rendimento e do valor da unidade do lote e da modalidade do negócio.
    */
-  async recalcularAgregados(negocioId: number) {
-    await this.prisma.$transaction((tx) => this.recalcular(tx, negocioId));
-  }
-
-  /** Parâmetros do negócio usados no cálculo de cada animal (GadosService). */
-  async parametrosCalculo(negocioId: number) {
-    const negocio = await this.prisma.negocio.findUnique({
-      where: { negocio_id: negocioId },
-      select: SELECT_CALCULO,
+  async recalcularGadosDoLote(tx: Prisma.TransactionClient, loteId: number) {
+    const lote = await tx.lote.findUniqueOrThrow({
+      where: { lote_id: loteId },
+      include: { negocio: { select: { modalidade: true } }, gados: true },
     });
-    if (!negocio) {
-      throw new NotFoundException(`Negócio ${negocioId} não encontrado`);
+    if (lote.negocio.modalidade === 'cabeca') return;
+    for (const gado of lote.gados) {
+      await tx.gado.update({
+        where: { gado_id: gado.gado_id },
+        data: calcularGado(
+          lote.negocio.modalidade,
+          gado.peso_total.toNumber(),
+          lote.rendimento_carcaca.toNumber(),
+          lote.valor_unidade.toNumber(),
+        ),
+      });
     }
-    return {
-      modalidade: negocio.modalidade,
-      valorUnidade: negocio.valor_unidade.toNumber(),
-      rendimentos: rendimentosDoNegocio(negocio),
-    };
   }
 
   /**
-   * Na modalidade "arroba" os quatro percentuais são obrigatórios; em "kg" e "cabeca"
-   * a API grava 100 em todos (rendimento neutro: peso_calculo = peso_total), ignorando
-   * o que vier do cliente — as colunas são NOT NULL.
+   * Recalcula os agregados de todos os lotes do negócio e os do próprio negócio
+   * (quantidade, valores, pesos, extremos, rendimento médio, comissão, Funrural e Senar).
+   * Roda na transação de quem chama — criar/editar/excluir lote ou gado, mover gado entre
+   * lotes, mudar tipo de negócio, comissão ou modalidade.
    */
-  private rendimentosParaGravar(
-    modalidade: string,
-    valores: Partial<Record<ColunaRendimento, number>>,
-  ): RendimentosNegocio {
-    if (modalidade !== 'arroba') {
-      return Object.fromEntries(
-        COLUNAS_RENDIMENTO.map((coluna) => [coluna, RENDIMENTO_NEUTRO]),
-      ) as RendimentosNegocio;
-    }
-    const faltando = COLUNAS_RENDIMENTO.filter(
-      (coluna) => valores[coluna] == null,
-    );
-    if (faltando.length > 0) {
-      throw new BadRequestException(
-        'Na modalidade "arroba" informe os quatro percentuais de rendimento ' +
-          `(faltando: ${faltando.join(', ')})`,
+  async recalcular(tx: Prisma.TransactionClient, negocioId: number) {
+    const negocio = await tx.negocio.findUniqueOrThrow({
+      where: { negocio_id: negocioId },
+      select: SELECT_CALCULO,
+    });
+    const lotes = await tx.lote.findMany({
+      where: { negocio_id: negocioId },
+      include: { gados: true },
+      orderBy: { lote_id: 'asc' },
+    });
+
+    const todosGados: GadoCalculado[] = [];
+    const agregadosLotes: AgregadosLote[] = [];
+    for (const lote of lotes) {
+      const gados = lote.gados.map(gadoParaCalculo);
+      const agregados = calcularLote(
+        negocio.modalidade,
+        {
+          valor_unidade: lote.valor_unidade.toNumber(),
+          qtd_animais: lote.qtd_animais,
+        },
+        gados,
       );
+      await tx.lote.update({
+        where: { lote_id: lote.lote_id },
+        data: agregados,
+      });
+      todosGados.push(...gados);
+      agregadosLotes.push(agregados);
     }
-    return Object.fromEntries(
-      COLUNAS_RENDIMENTO.map((coluna) => [coluna, valores[coluna]]),
-    ) as RendimentosNegocio;
+
+    const agregados = calcularNegocio(agregadosLotes, todosGados);
+    const porcentagem = negocio.porcentagem_comissao?.toNumber();
+    const aliquotas = await this.aliquotasDoNegocio(tx, negocio);
+    await tx.negocio.update({
+      where: { negocio_id: negocioId },
+      data: {
+        ...agregados,
+        ...(porcentagem != null
+          ? { comissao: calcularComissao(agregados.valor_total, porcentagem) }
+          : {}),
+        ...aliquotas,
+        ...calcularImpostos(
+          agregados.valor_total,
+          negocio.tipo_negocio as TipoNegocio,
+          aliquotas.aliquota_funrural,
+          aliquotas.aliquota_senar,
+        ),
+      },
+    });
+  }
+
+  /**
+   * Depois de trocar a modalidade:
+   * - para "cabeca": o único lote vira o "Lote único", com rendimento neutro;
+   * - para "kg": os lotes passam a ter rendimento neutro;
+   * - para "arroba" (vindo de "kg"/"cabeca"): os lotes mantêm o rendimento (100) até o
+   *   usuário editá-los.
+   * Nas modalidades com pesagem, recalcula as cabeças com a nova regra.
+   */
+  private async ajustarLotesAModalidade(
+    tx: Prisma.TransactionClient,
+    negocioId: number,
+    modalidade: string,
+  ) {
+    if (modalidade === 'cabeca') {
+      await tx.lote.updateMany({
+        where: { negocio_id: negocioId },
+        data: {
+          nome_lote: NOME_LOTE_UNICO,
+          rendimento_carcaca: RENDIMENTO_NEUTRO,
+        },
+      });
+      return;
+    }
+    if (modalidade === 'kg') {
+      await tx.lote.updateMany({
+        where: { negocio_id: negocioId },
+        data: { rendimento_carcaca: RENDIMENTO_NEUTRO },
+      });
+    }
+    const lotes = await tx.lote.findMany({
+      where: { negocio_id: negocioId },
+      select: { lote_id: true },
+    });
+    for (const { lote_id } of lotes) {
+      await this.recalcularGadosDoLote(tx, lote_id);
+    }
   }
 
   /**
@@ -377,118 +404,6 @@ export class NegociosService {
     if (!vinculo) {
       throw new BadRequestException(MENSAGEM_FAZENDA_DE_OUTRO_PECUARISTA);
     }
-  }
-
-  /** Recalcula peso_calculo, peso_arroba e valor_total de todos os animais do negócio. */
-  private async recalcularGados(
-    tx: Prisma.TransactionClient,
-    negocioId: number,
-  ) {
-    const negocio = await tx.negocio.findUniqueOrThrow({
-      where: { negocio_id: negocioId },
-      select: SELECT_CALCULO,
-    });
-    const rendimentos = rendimentosDoNegocio(negocio);
-    const gados = await tx.gado.findMany({ where: { negocio_id: negocioId } });
-    for (const gado of gados) {
-      await tx.gado.update({
-        where: { gado_id: gado.gado_id },
-        data: calcularValoresGado(
-          negocio.modalidade,
-          gado.peso_total.toNumber(),
-          rendimentoDaRaca(rendimentos, gado.denominacao),
-          negocio.valor_unidade.toNumber(),
-        ),
-      });
-    }
-  }
-
-  private async recalcular(tx: Prisma.TransactionClient, negocioId: number) {
-    const negocio = await tx.negocio.findUniqueOrThrow({
-      where: { negocio_id: negocioId },
-      select: SELECT_CALCULO,
-    });
-    const porcentagem = negocio.porcentagem_comissao?.toNumber();
-    const aliquotas = await this.aliquotasDoNegocio(tx, negocio);
-
-    // valor_total primeiro: comissão, funrural e senar dependem dele.
-    const dependentesDoValor = (valorTotal: number) => ({
-      valor_total: valorTotal,
-      ...(porcentagem != null
-        ? { comissao: calcularComissao(valorTotal, porcentagem) }
-        : {}),
-      ...aliquotas,
-      ...calcularImpostos(
-        valorTotal,
-        negocio.tipo_negocio as TipoNegocio,
-        aliquotas.aliquota_funrural,
-        aliquotas.aliquota_senar,
-      ),
-    });
-
-    // Modalidade "cabeca": valor_total = qtd_animais × valor_unidade. mais_pesado,
-    // mais_leve, valor_medio, os horários de pesagem e os campos de peso/rendimento
-    // não se aplicam (permanecem NULL).
-    if (negocio.modalidade === 'cabeca') {
-      await tx.negocio.update({
-        where: { negocio_id: negocioId },
-        data: dependentesDoValor(
-          arredondarCentavos(
-            negocio.qtd_animais * negocio.valor_unidade.toNumber(),
-          ),
-        ),
-      });
-      return;
-    }
-
-    const gados = (
-      await tx.gado.findMany({ where: { negocio_id: negocioId } })
-    ).map((gado) => ({
-      valor_total: gado.valor_total.toNumber(),
-      peso_total: gado.peso_total.toNumber(),
-      peso_calculo: gado.peso_calculo.toNumber(),
-      peso_arroba: gado.peso_arroba.toNumber(),
-    }));
-    const qtd_animais = gados.length;
-    const somar = (valor: (gado: (typeof gados)[number]) => number) =>
-      gados.reduce((soma, gado) => soma + valor(gado), 0);
-
-    const valorTotal = arredondarCentavos(somar((gado) => gado.valor_total));
-    const pesos = gados.map((gado) => gado.peso_total);
-
-    // Campos do romaneio — sem arredondamento (exceto o da própria coluna). Sem
-    // gados, ficam NULL (nunca divide por zero).
-    const pesoTotalQuilos = somar((gado) => gado.peso_total);
-    const pesoTotalArroba = somar((gado) => gado.peso_arroba);
-    const camposRomaneio =
-      qtd_animais > 0
-        ? {
-            peso_total_quilos: pesoTotalQuilos,
-            peso_total_arroba: pesoTotalArroba,
-            // Ponderado pelo peso: SUM(peso_calculo) / SUM(peso_total) × 100.
-            rendimento_medio: calcularRendimentoMedio(gados),
-            peso_medio_arroba: pesoTotalArroba / qtd_animais,
-            peso_medio_quilos: pesoTotalQuilos / qtd_animais,
-          }
-        : {
-            peso_total_quilos: null,
-            peso_total_arroba: null,
-            rendimento_medio: null,
-            peso_medio_arroba: null,
-            peso_medio_quilos: null,
-          };
-
-    await tx.negocio.update({
-      where: { negocio_id: negocioId },
-      data: {
-        qtd_animais,
-        valor_medio: qtd_animais > 0 ? valorTotal / qtd_animais : 0,
-        mais_pesado: pesos.length > 0 ? Math.max(...pesos) : 0,
-        mais_leve: pesos.length > 0 ? Math.min(...pesos) : 0,
-        ...camposRomaneio,
-        ...dependentesDoValor(valorTotal),
-      },
-    });
   }
 
   private async aliquotasDaEmpresa(
