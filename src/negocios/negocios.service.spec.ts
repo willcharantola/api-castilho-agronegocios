@@ -232,3 +232,58 @@ describe('NegociosService.update — troca de modalidade', () => {
     );
   });
 });
+
+describe('NegociosService.resumo', () => {
+  function servicoComAgregado() {
+    const aggregate = jest.fn().mockResolvedValue({
+      _count: { _all: 3 },
+      _sum: { comissao: dec(1234.5), qtd_animais: 42 },
+    });
+    const servico = new NegociosService({
+      negocio: { aggregate },
+    } as unknown as PrismaService);
+    return { servico, aggregate };
+  }
+
+  it('Admin recebe as três métricas do período', async () => {
+    const { servico, aggregate } = servicoComAgregado();
+    await expect(
+      servico.resumo(true, undefined, '2026-11-01', '2026-11-30'),
+    ).resolves.toEqual({
+      negocios_realizados: 3,
+      comissao_total: 1234.5,
+      total_cabecas: 42,
+    });
+    expect(aggregate.mock.calls[0][0].where).toEqual({
+      data_negocio: {
+        gte: new Date('2026-11-01'),
+        lte: new Date('2026-11-30'),
+      },
+    });
+  });
+
+  it('Normal recebe null nas três, sem consultar o banco', async () => {
+    const { servico, aggregate } = servicoComAgregado();
+    await expect(servico.resumo(false)).resolves.toEqual({
+      negocios_realizados: null,
+      comissao_total: null,
+      total_cabecas: null,
+    });
+    expect(aggregate).not.toHaveBeenCalled();
+  });
+
+  it('período sem negócios → zeros (não null)', async () => {
+    const aggregate = jest.fn().mockResolvedValue({
+      _count: { _all: 0 },
+      _sum: { comissao: null, qtd_animais: null },
+    });
+    const servico = new NegociosService({
+      negocio: { aggregate },
+    } as unknown as PrismaService);
+    await expect(servico.resumo(true)).resolves.toEqual({
+      negocios_realizados: 0,
+      comissao_total: 0,
+      total_cabecas: 0,
+    });
+  });
+});

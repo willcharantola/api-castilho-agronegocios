@@ -56,6 +56,32 @@ export const MENSAGEM_FAZENDA_DE_OUTRO_PECUARISTA =
 export const MENSAGEM_TROCA_PARA_CABECA =
   'Para mudar para "Por cabeça" o negócio precisa ter no máximo um lote e nenhuma cabeça pesada';
 
+/** Métricas restritas da Home e do Dashboard (`null` para quem não é Admin). */
+export type ResumoNegocios = {
+  negocios_realizados: number | null;
+  comissao_total: number | null;
+  total_cabecas: number | null;
+};
+
+/** Filtros da listagem de negócios (fazenda e intervalo de data_negocio). */
+function filtroDeNegocios(
+  fazendaId?: number,
+  dataInicio?: string,
+  dataFim?: string,
+): Prisma.negocioWhereInput {
+  const where: Prisma.negocioWhereInput = {};
+  if (fazendaId !== undefined) {
+    where.fazenda_id = fazendaId;
+  }
+  if (dataInicio || dataFim) {
+    where.data_negocio = {
+      ...(dataInicio ? { gte: new Date(dataInicio) } : {}),
+      ...(dataFim ? { lte: new Date(dataFim) } : {}),
+    };
+  }
+  return where;
+}
+
 /** Gado gravado (Decimal do Prisma) no formato das funções de cálculo. */
 export function gadoParaCalculo(gado: {
   peso_total: Prisma.Decimal;
@@ -121,24 +147,41 @@ export class NegociosService {
   }
 
   findAll(fazendaId?: number, dataInicio?: string, dataFim?: string) {
-    const where: Prisma.negocioWhereInput = {};
-
-    if (fazendaId !== undefined) {
-      where.fazenda_id = fazendaId;
-    }
-
-    if (dataInicio || dataFim) {
-      where.data_negocio = {
-        ...(dataInicio ? { gte: new Date(dataInicio) } : {}),
-        ...(dataFim ? { lte: new Date(dataFim) } : {}),
-      };
-    }
-
     // Mais recente primeiro (ordem de cadastro invertida).
     return this.prisma.negocio.findMany({
-      where,
+      where: filtroDeNegocios(fazendaId, dataInicio, dataFim),
       orderBy: { negocio_id: 'desc' },
     });
+  }
+
+  /**
+   * Métricas da Home e do Dashboard no período (mesmos filtros da listagem): quantidade de
+   * negócios, soma das comissões em R$ e soma das cabeças. Para quem não é Admin, as três
+   * saem `null` — nem são calculadas.
+   */
+  async resumo(
+    podeVer: boolean,
+    fazendaId?: number,
+    dataInicio?: string,
+    dataFim?: string,
+  ): Promise<ResumoNegocios> {
+    if (!podeVer) {
+      return {
+        negocios_realizados: null,
+        comissao_total: null,
+        total_cabecas: null,
+      };
+    }
+    const resultado = await this.prisma.negocio.aggregate({
+      where: filtroDeNegocios(fazendaId, dataInicio, dataFim),
+      _count: { _all: true },
+      _sum: { comissao: true, qtd_animais: true },
+    });
+    return {
+      negocios_realizados: resultado._count._all,
+      comissao_total: resultado._sum.comissao?.toNumber() ?? 0,
+      total_cabecas: resultado._sum.qtd_animais ?? 0,
+    };
   }
 
   async findOne(negocioId: number) {

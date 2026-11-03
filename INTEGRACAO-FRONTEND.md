@@ -127,7 +127,7 @@ Base URL: `NEXT_PUBLIC_API_URL`. Todos exigem JWT exceto os marcados como **púb
 | Usuários | `GET/POST /usuarios`, `GET/PATCH/DELETE /usuarios/:id` | **Exige `nivel_acesso: "Admin"`** em todas as rotas |
 | Fazendas | `GET /fazendas`, `GET/PATCH/DELETE /fazendas/:id` | Fazenda nova nasce dentro de um pecuarista (ver abaixo). `POST /fazendas` continua só para itens antigos da fila offline |
 | Pecuaristas | `GET/POST /pecuaristas`, `GET/PATCH/DELETE /pecuaristas/:id`, `POST /pecuaristas/:id/fazendas`, `DELETE /pecuaristas/:id/fazendas/:fazendaId` | `POST` cria pecuarista + fazendas numa transação. `DELETE` do vínculo responde `409` se houver negócio com o par |
-| Negócios | `GET/POST /negocios`, `GET/PATCH /negocios/:id`, `PATCH /negocios/:id/concluir`, `DELETE /negocios/:id` | `DELETE` **exige `Admin`** (lotes e gados saem junto). `GET /negocios/:id` inclui os `lotes`, cada um com seus `gados`. `GET /negocios` aceita `?fazenda_id=&data_inicio=&data_fim=` |
+| Negócios | `GET/POST /negocios`, `GET /negocios/resumo`, `GET/PATCH /negocios/:id`, `PATCH /negocios/:id/concluir`, `DELETE /negocios/:id` | `DELETE` **exige `Admin`** (lotes e gados saem junto). `GET /negocios/:id` inclui os `lotes`, cada um com seus `gados`. `GET /negocios` e `GET /negocios/resumo` aceitam `?fazenda_id=&data_inicio=&data_fim=`. Comissão restrita a Admin (ver "Permissões por perfil") |
 | Lotes | `GET/POST /negocios/:negocioId/lotes`, `GET/PATCH/DELETE /lotes/:id` | `DELETE` responde `409` se o lote tiver cabeças |
 | Gados | `GET/POST /gados`, `GET/PATCH/DELETE /gados/:id` | Cada gado pertence a um `lote_id` (e ao negócio pelo lote) |
 | Configurações | `GET /configuracoes/impostos`, `PATCH /configuracoes/impostos` | Alíquotas da empresa do usuário logado. `PATCH` **exige `Admin`** |
@@ -201,6 +201,16 @@ Os horários são a **hora local do cliente**: o front envia o fuso do aparelho 
 
 `comissao` (R$) é calculada pela API — `valor_total × porcentagem_comissao / 100` — e recalculada
 quando o percentual ou o valor total do negócio mudam. Fica `null` enquanto não houver percentual.
+
+**Permissões por perfil (comissão):** para usuário `Normal`, toda resposta de negócio
+(`GET /negocios`, `GET /negocios/:id`, `POST`, `PATCH`, `PATCH /concluir`) traz `comissao` e
+`porcentagem_comissao` como `null` (os campos continuam presentes). `porcentagem_comissao` enviado
+por um Normal é **ignorado em silêncio** (sem `400`; na edição o valor gravado é preservado; na
+criação fica `null` até um Admin preencher). Admin recebe e envia normalmente.
+
+**`GET /negocios/resumo`** (Home e Dashboard): `{ negocios_realizados, comissao_total, total_cabecas }`
+no período, com os mesmos filtros da listagem. Para Normal as três vêm `null` (nem são calculadas);
+para Admin, período sem negócios → zeros.
 
 **Troca de modalidade** (`PATCH` com `modalidade`): para `"cabeca"` só com no máximo um lote e
 nenhuma cabeça (senão `400`); o lote vira "Lote único" com rendimento 100. Para `"kg"` os lotes
