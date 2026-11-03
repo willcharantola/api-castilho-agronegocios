@@ -6,6 +6,9 @@ import {
   calcularLote,
   calcularNegocio,
   calcularRendimentoMedio,
+  calcularComissao,
+  comModoComissao,
+  modoComissao,
   type GadoCalculado,
 } from './calculo.util';
 
@@ -238,5 +241,123 @@ describe('calcularNegocio', () => {
       valor_medio: 3000,
       peso_total_quilos: null,
     });
+  });
+});
+
+describe('modoComissao', () => {
+  it.each([
+    ['Gordo', 'arroba', 'por_arroba'],
+    ['Gordo', 'kg', 'por_arroba'],
+    ['Gordo', 'cabeca', 'percentual'],
+    ['Reposicao', 'arroba', 'percentual'],
+    ['Reposicao', 'kg', 'percentual'],
+    ['Reposicao', 'cabeca', 'percentual'],
+  ])('%s + %s → %s', (tipoGado, modalidade, modo) => {
+    expect(modoComissao(tipoGado, modalidade)).toBe(modo);
+  });
+
+  it('comModoComissao acrescenta o campo derivado', () => {
+    expect(
+      comModoComissao({ negocio_id: 1, tipo_gado: 'Gordo', modalidade: 'kg' }),
+    ).toEqual({
+      negocio_id: 1,
+      tipo_gado: 'Gordo',
+      modalidade: 'kg',
+      modo_comissao: 'por_arroba',
+    });
+  });
+});
+
+describe('calcularComissao', () => {
+  const base = { valorTotal: 10000, pesoTotalQuilos: 0, valorInformado: 2 };
+
+  it('Gordo + arroba: R$ por arroba de peso vivo, sem arredondar a arroba', () => {
+    // 2 × 350 ÷ 15 = 46,666… → 46,67 (e não 2 × 23,33 = 46,66)
+    expect(
+      calcularComissao({
+        ...base,
+        tipoGado: 'Gordo',
+        modalidade: 'arroba',
+        pesoTotalQuilos: 350,
+      }),
+    ).toBe(46.67);
+    // 3 animais de 350 kg
+    expect(
+      calcularComissao({
+        ...base,
+        tipoGado: 'Gordo',
+        modalidade: 'arroba',
+        pesoTotalQuilos: 1050,
+      }),
+    ).toBe(140);
+  });
+
+  it('Gordo + kg: mesma regra (peso vivo ÷ 15), ignora o valor total', () => {
+    expect(
+      calcularComissao({
+        ...base,
+        tipoGado: 'Gordo',
+        modalidade: 'kg',
+        pesoTotalQuilos: 350,
+      }),
+    ).toBe(46.67);
+  });
+
+  it('Gordo + cabeca: percentual do valor total', () => {
+    expect(
+      calcularComissao({
+        ...base,
+        tipoGado: 'Gordo',
+        modalidade: 'cabeca',
+        valorInformado: 1.5,
+      }),
+    ).toBe(150);
+  });
+
+  it.each(['arroba', 'kg', 'cabeca'])(
+    'Reposicao + %s: percentual do valor total',
+    (modalidade) => {
+      expect(
+        calcularComissao({
+          ...base,
+          tipoGado: 'Reposicao',
+          modalidade,
+          pesoTotalQuilos: 350,
+          valorInformado: 1.5,
+        }),
+      ).toBe(150);
+    },
+  );
+
+  it('sem gados pesados a comissão por arroba é 0', () => {
+    expect(
+      calcularComissao({ ...base, tipoGado: 'Gordo', modalidade: 'arroba' }),
+    ).toBe(0);
+  });
+
+  it('sem valor informado → null', () => {
+    expect(
+      calcularComissao({
+        ...base,
+        tipoGado: 'Gordo',
+        modalidade: 'arroba',
+        pesoTotalQuilos: 350,
+        valorInformado: null,
+      }),
+    ).toBeNull();
+  });
+
+  it('arredonda só o resultado final (ROUND_HALF_UP)', () => {
+    // 1.000,50 × 0,5% = 5,0025 → 5,00; 1.001 × 0,5% = 5,005 → 5,01
+    const pct = (valorTotal: number) =>
+      calcularComissao({
+        tipoGado: 'Reposicao',
+        modalidade: 'kg',
+        valorTotal,
+        pesoTotalQuilos: 0,
+        valorInformado: 0.5,
+      });
+    expect(pct(1000.5)).toBe(5);
+    expect(pct(1001)).toBe(5.01);
   });
 });

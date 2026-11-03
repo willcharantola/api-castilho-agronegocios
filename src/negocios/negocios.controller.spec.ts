@@ -12,7 +12,14 @@ const usuario = (nivel_acesso: string): AuthenticatedUser => ({
 const ADMIN = usuario('Admin');
 const NORMAL = usuario('Normal');
 
-const NEGOCIO = { negocio_id: 7, comissao: 50, porcentagem_comissao: 5 };
+const NEGOCIO = {
+  negocio_id: 7,
+  tipo_gado: 'Gordo',
+  modalidade: 'arroba',
+  comissao: 50,
+  porcentagem_comissao: 5,
+};
+const NEGOCIO_ADMIN = { ...NEGOCIO, modo_comissao: 'por_arroba' };
 
 function criarController() {
   const service = {
@@ -43,6 +50,7 @@ describe('NegociosController — comissão por perfil', () => {
       expect(resposta).toMatchObject({
         comissao: null,
         porcentagem_comissao: null,
+        modo_comissao: null,
       });
     }
   });
@@ -52,8 +60,12 @@ describe('NegociosController — comissão por perfil', () => {
     expect(await controller.findOne(ADMIN, 7)).toMatchObject({
       comissao: 50,
       porcentagem_comissao: 5,
+      modo_comissao: 'por_arroba',
     });
-    expect(await controller.findAll(ADMIN, {})).toEqual([NEGOCIO, NEGOCIO]);
+    expect(await controller.findAll(ADMIN, {})).toEqual([
+      NEGOCIO_ADMIN,
+      NEGOCIO_ADMIN,
+    ]);
   });
 
   it('comissão enviada por Normal é ignorada na criação e na edição', async () => {

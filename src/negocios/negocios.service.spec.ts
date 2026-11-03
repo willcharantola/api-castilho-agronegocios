@@ -89,11 +89,12 @@ const comDecimais = <T extends object>(dados: T) =>
     ]),
   );
 
-function bancoEmMemoria(modalidade: string) {
+function bancoEmMemoria(modalidade: string, tipoGado = 'Reposicao') {
   const negocio: Record<string, unknown> = {
     negocio_id: 1,
     empresa_id: 1,
     modalidade,
+    tipo_gado: tipoGado,
     tipo_negocio: 'Funrural',
     porcentagem_comissao: dec(2),
     aliquota_funrural: dec(1.5),
@@ -285,5 +286,85 @@ describe('NegociosService.resumo', () => {
       comissao_total: 0,
       total_cabecas: 0,
     });
+  });
+});
+
+describe('NegociosService.recalcular — comissão por arroba (Gordo)', () => {
+  it('Gordo + arroba: R$ por arroba sobre o peso vivo de todos os lotes', async () => {
+    const { servico, tx, negocio } = bancoEmMemoria('arroba', 'Gordo');
+    await servico.recalcular(tx, 1);
+    // R$ 2,00 × (600 + 450) kg ÷ 15 = 140,00 (não usa a arroba de carcaça: 38 @)
+    expect(num(negocio.comissao)).toBe(140);
+  });
+
+  it('alterar o peso de uma cabeça recalcula a comissão', async () => {
+    const { servico, tx, negocio, gados } = bancoEmMemoria('arroba', 'Gordo');
+    gados[0].peso_total = dec(750);
+    await servico.recalcularGadosDoLote(tx, 10);
+    await servico.recalcular(tx, 1);
+    // 2 × (750 + 450) ÷ 15 = 160,00
+    expect(num(negocio.comissao)).toBe(160);
+  });
+
+  it('sem valor informado a comissão fica null', async () => {
+    const { servico, tx, negocio } = bancoEmMemoria('arroba', 'Gordo');
+    negocio.porcentagem_comissao = null;
+    negocio.comissao = dec(99);
+    await servico.recalcular(tx, 1);
+    expect(negocio.comissao).toBeNull();
+  });
+});
+
+describe('NegociosService.update — troca do modo da comissão', () => {
+  function servicoGordoArroba() {
+    const atualizar = jest.fn();
+    const prisma = {
+      negocio: {
+        findUnique: jest.fn().mockResolvedValue({
+          negocio_id: 1,
+          modalidade: 'arroba',
+          tipo_gado: 'Gordo',
+          pecuarista_id: 3,
+          fazenda_id: 2,
+          lotes: [],
+        }),
+        findUniqueOrThrow: jest.fn().mockResolvedValue({}),
+      },
+      $transaction: jest.fn((fn: (tx: unknown) => unknown) =>
+        fn({ negocio: { update: atualizar } }),
+      ),
+    };
+    const servico = new NegociosService(prisma as unknown as PrismaService);
+    jest.spyOn(servico, 'recalcular').mockResolvedValue();
+    jest
+      .spyOn(servico as never, 'ajustarLotesAModalidade')
+      .mockResolvedValue(undefined as never);
+    const gravado = () =>
+      (atualizar.mock.calls[0][0] as { data: Record<string, unknown> }).data;
+    return { servico, gravado };
+  }
+
+  it('Gordo → Reposicao descarta o valor informado (muda de R$/@ para %)', async () => {
+    const { servico, gravado } = servicoGordoArroba();
+    await servico.update(1, { tipo_gado: 'Reposicao' });
+    expect(gravado()).toMatchObject({ porcentagem_comissao: null });
+  });
+
+  it('Gordo arroba → cabeca também descarta', async () => {
+    const { servico, gravado } = servicoGordoArroba();
+    await servico.update(1, { modalidade: 'cabeca' });
+    expect(gravado()).toMatchObject({ porcentagem_comissao: null });
+  });
+
+  it('Gordo arroba → kg mantém o valor (o modo não muda)', async () => {
+    const { servico, gravado } = servicoGordoArroba();
+    await servico.update(1, { modalidade: 'kg' });
+    expect(gravado()).not.toHaveProperty('porcentagem_comissao');
+  });
+
+  it('um valor novo enviado junto com a troca é gravado', async () => {
+    const { servico, gravado } = servicoGordoArroba();
+    await servico.update(1, { tipo_gado: 'Reposicao', porcentagem_comissao: 1.5 });
+    expect(gravado()).toMatchObject({ porcentagem_comissao: 1.5 });
   });
 });

@@ -58,11 +58,13 @@ export class CreateNegocioDto {
     minimum: 0,
     maximum: 100,
     description:
-      'Percentual de comissão (0 a 100). Editável depois via PATCH /negocios/:id. ' +
-      'O valor em R$ (`comissao`) é calculado pela API: valor_total × percentual / 100.',
+      'Valor da comissão (0 a 100, 2 casas). Gado Gordo em "arroba"/"kg": R$ por arroba ' +
+      'de peso vivo (`comissao` = valor × peso_total_quilos / 15). Demais casos: percentual ' +
+      '(`comissao` = valor_total × valor / 100). Ver `modo_comissao` na resposta. Mudar ' +
+      'tipo_gado ou modalidade de forma que o modo mude descarta o valor (fica null).',
   })
   @IsOptional()
-  @IsNumber()
+  @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
   @Max(100)
   porcentagem_comissao?: number;

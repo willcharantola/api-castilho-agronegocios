@@ -10,11 +10,15 @@ export function ehAdmin(user: Pick<AuthenticatedUser, 'nivel_acesso'>) {
 /** Campos de comissão do negócio, que o usuário Normal não vê nem altera. */
 export const CAMPOS_DE_COMISSAO = ['comissao', 'porcentagem_comissao'] as const;
 
-type ComCamposDeComissao = { comissao?: unknown; porcentagem_comissao?: unknown };
+type ComCamposDeComissao = {
+  comissao?: unknown;
+  porcentagem_comissao?: unknown;
+  modo_comissao?: unknown;
+};
 
 /**
- * Resposta para o usuário: para quem não é Admin, a comissão (valor e percentual) sai
- * como `null`. Os campos continuam presentes, para o formato da resposta não mudar entre
+ * Resposta para o usuário: para quem não é Admin, a comissão (valor, valor informado e
+ * `modo_comissao`, quando presente) sai como `null`. Os campos continuam presentes, para o formato da resposta não mudar entre
  * perfis. Funciona com um negócio ou com uma lista deles.
  */
 export function ocultarCamposDeComissao<T extends ComCamposDeComissao>(
@@ -34,6 +38,7 @@ export function ocultarCamposDeComissao<T extends ComCamposDeComissao>(
     ...item,
     comissao: null,
     porcentagem_comissao: null,
+    ...('modo_comissao' in item ? { modo_comissao: null } : {}),
   });
   return Array.isArray(dados) ? dados.map(ocultar) : ocultar(dados);
 }

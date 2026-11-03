@@ -47,9 +47,51 @@ export function calcularImpostos(
   }
 }
 
-/** Valor da comissão em R$ (valor_total × porcentagem / 100), em centavos. */
-export function calcularComissao(valorTotal: number, porcentagem: number) {
-  return arredondarCentavos((valorTotal * porcentagem) / 100);
+/**
+ * Como `porcentagem_comissao` é interpretado (ver calculo-comissao.md):
+ * - "por_arroba": gado Gordo em "arroba" ou "kg" — R$ por arroba de peso vivo;
+ * - "percentual": demais casos (Gordo por cabeça e Reposição) — % do valor_total.
+ */
+export type ModoComissao = 'por_arroba' | 'percentual';
+
+export function modoComissao(
+  tipoGado: string,
+  modalidade: string,
+): ModoComissao {
+  return tipoGado === 'Gordo' && (modalidade === 'arroba' || modalidade === 'kg')
+    ? 'por_arroba'
+    : 'percentual';
+}
+
+/** Resposta do negócio com o campo derivado `modo_comissao` (calculado, não é coluna). */
+export function comModoComissao<
+  T extends { tipo_gado: string; modalidade: string },
+>(negocio: T): T & { modo_comissao: ModoComissao } {
+  return {
+    ...negocio,
+    modo_comissao: modoComissao(negocio.tipo_gado, negocio.modalidade),
+  };
+}
+
+/**
+ * Comissão em R$. Por arroba usa o peso vivo (peso_total_quilos ÷ 15, não a arroba de
+ * carcaça) sem arredondar a arroba: 2,00 × 350 ÷ 15 = 46,666… → 46,67. Sem valor
+ * informado → null; sem cabeças pesadas → 0.
+ */
+export function calcularComissao(p: {
+  tipoGado: string;
+  modalidade: string;
+  valorTotal: number;
+  pesoTotalQuilos: number;
+  valorInformado: number | null;
+}): number | null {
+  if (p.valorInformado == null) return null;
+  const informado = new Prisma.Decimal(p.valorInformado);
+  const bruto =
+    modoComissao(p.tipoGado, p.modalidade) === 'por_arroba'
+      ? informado.mul(p.pesoTotalQuilos).div(KG_POR_ARROBA)
+      : new Prisma.Decimal(p.valorTotal).mul(informado).div(100);
+  return bruto.toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP).toNumber();
 }
 
 export interface ValoresGado {

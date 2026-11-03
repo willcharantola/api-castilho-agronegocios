@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { impedirExclusaoComNegocios } from '../common/exclusao.util';
 import { criarIdempotente } from '../common/idempotencia.util';
 import { handlePrismaError } from '../common/prisma-error.util';
 import { PrismaService } from '../prisma/prisma.service';
@@ -83,6 +84,11 @@ export class FazendasService {
 
   async remove(fazendaId: number) {
     await this.findOne(fazendaId);
+    await impedirExclusaoComNegocios(
+      this.prisma,
+      { fazenda_id: fazendaId },
+      'esta fazenda',
+    );
     try {
       return await this.prisma.$transaction(async (tx) => {
         await tx.pecuarista_fazenda.deleteMany({
