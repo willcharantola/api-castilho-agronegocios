@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { impedirExclusaoComNegocios } from '../common/exclusao.util';
 import { criarIdempotente } from '../common/idempotencia.util';
 import { handlePrismaError } from '../common/prisma-error.util';
 import { PrismaService } from '../prisma/prisma.service';
@@ -47,6 +48,11 @@ export class CompradoresService {
 
   async remove(compradorId: number) {
     await this.findOne(compradorId);
+    await impedirExclusaoComNegocios(
+      this.prisma,
+      { comprador_id: compradorId },
+      'este comprador',
+    );
     try {
       return await this.prisma.comprador.delete({
         where: { comprador_id: compradorId },

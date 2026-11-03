@@ -26,14 +26,16 @@ import {
   ocultarCamposDeComissao,
   semCamposDeComissao,
 } from '../auth/permissoes.util';
+import { comModoComissao } from './calculo.util';
 import { ConcluirNegocioDto } from './dto/concluir-negocio.dto';
 import { CreateNegocioDto } from './dto/create-negocio.dto';
 import { FindNegociosQueryDto } from './dto/find-negocios-query.dto';
 import { UpdateNegocioDto } from './dto/update-negocio.dto';
 import { NegociosService } from './negocios.service';
 
-// Comissão (valor e percentual) é restrita a Admin: para o usuário Normal toda resposta
-// de negócio sai com os dois campos `null`, e os enviados por ele são ignorados.
+// Comissão (valor, valor informado e modo_comissao) é restrita a Admin: para o usuário
+// Normal toda resposta de negócio sai com esses campos `null`, e os enviados por ele são
+// ignorados. `modo_comissao` diz como ler `porcentagem_comissao` (ver modoComissao).
 @ApiTags('negocios')
 @ApiBearerAuth()
 @Controller('negocios')
@@ -48,7 +50,7 @@ export class NegociosController {
     const negocio = await this.negociosService.create(
       semCamposDeComissao(dto, user),
     );
-    return ocultarCamposDeComissao(negocio, user);
+    return ocultarCamposDeComissao(comModoComissao(negocio), user);
   }
 
   @ApiQuery({ name: 'fazenda_id', required: false, type: Number })
@@ -64,7 +66,7 @@ export class NegociosController {
       query.data_inicio,
       query.data_fim,
     );
-    return ocultarCamposDeComissao(negocios, user);
+    return ocultarCamposDeComissao(negocios.map(comModoComissao), user);
   }
 
   @ApiOperation({
@@ -95,7 +97,7 @@ export class NegociosController {
     @Param('id', ParseIntPipe) id: number,
   ) {
     return ocultarCamposDeComissao(
-      await this.negociosService.findOne(id),
+      comModoComissao(await this.negociosService.findOne(id)),
       user,
     );
   }
@@ -110,7 +112,7 @@ export class NegociosController {
       id,
       semCamposDeComissao(dto, user),
     );
-    return ocultarCamposDeComissao(negocio, user);
+    return ocultarCamposDeComissao(comModoComissao(negocio), user);
   }
 
   // Chamado pelo botão "Concluir" do cadastro: registra hora_fim_pesagem (hora local do cliente).
@@ -132,7 +134,7 @@ export class NegociosController {
       fuso,
       dto.hora_fim_pesagem,
     );
-    return negocio && ocultarCamposDeComissao(negocio, user);
+    return negocio && ocultarCamposDeComissao(comModoComissao(negocio), user);
   }
 
   // Exclusão de negócios é uma ação sensível: restrita a nivel_acesso "Admin".

@@ -173,7 +173,7 @@ reenviar com o mesmo `uuid_origem` (do pecuarista e de cada fazenda nova) não d
 Campos enviados pelo front no `POST`/`PATCH`:
 `empresa_id`, `pecuarista_id`, `fazenda_id`, `comprador_id`, `modalidade` (`"arroba"` | `"kg"` | `"cabeca"`),
 `tipo_gado` (`"Gordo"` | `"Reposicao"`), `tipo_negocio` (`"Desconto em folha"` | `"Livre"` | `"Funrural"`),
-`data_negocio` (ISO 8601), `porcentagem_comissao` (percentual, 0–100), `observacao`.
+`data_negocio` (ISO 8601), `porcentagem_comissao` (0–100, 2 casas; R$/@ ou %, ver abaixo), `observacao`.
 `tipo_lote`, `valor_unidade`, `media_carimbo`, os rendimentos por raça, `qtd_animais` e
 `valor_total` **não são mais aceitos** (`400`): tipo, valor, carimbo e rendimento são do lote.
 
@@ -199,12 +199,33 @@ Os horários são a **hora local do cliente**: o front envia o fuso do aparelho 
 `X-Fuso-Horario` (ex.: `America/Cuiaba`) e a API converte o instante do servidor para esse fuso
 (sem header ou com fuso inválido, usa `America/Sao_Paulo`).
 
-`comissao` (R$) é calculada pela API — `valor_total × porcentagem_comissao / 100` — e recalculada
-quando o percentual ou o valor total do negócio mudam. Fica `null` enquanto não houver percentual.
+**Comissão** (`comissao`, R$) é calculada pela API conforme `modo_comissao`, campo derivado que vem
+em toda resposta de negócio (não é coluna e não é aceito em escrita):
+
+| `tipo_gado` | `modalidade` | `modo_comissao` | `porcentagem_comissao` guarda | `comissao` |
+|---|---|---|---|---|
+| Gordo | `arroba` ou `kg` | `por_arroba` | R$ por arroba (ex.: 2,00) | valor × `peso_total_quilos` ÷ 15 (peso **vivo**, não a arroba de carcaça) |
+| Gordo | `cabeca` | `percentual` | percentual | `valor_total` × valor ÷ 100 |
+| Reposicao | qualquer | `percentual` | percentual | `valor_total` × valor ÷ 100 |
+
+A arroba não é arredondada antes de multiplicar (2,00 × 350 kg ÷ 15 = 46,666… → **46,67**); só o
+resultado final, `ROUND_HALF_UP`. Sem cabeças pesadas, a comissão por arroba é 0,00. Fica `null`
+enquanto `porcentagem_comissao` for `null`. É recalculada a cada criação/edição/exclusão de lote ou
+gado, mudança de valor/rendimento do lote e de `tipo_gado`, `modalidade` ou `porcentagem_comissao`.
+Um `PATCH` que muda `tipo_gado`/`modalidade` **de modo** (ex.: Gordo → Reposicao, ou `kg` → `cabeca`
+no gordo) descarta o valor informado (`porcentagem_comissao` e `comissao` ficam `null`), salvo se um
+novo `porcentagem_comissao` vier no mesmo `PATCH`; Gordo `arroba` ↔ `kg` mantém o valor. A regra
+está em `src/negocios/calculo.util.ts` (`modoComissao`, `calcularComissao`) e é replicada no front
+em `src/lib/comissao.ts`.
+
+> Nota para o modelo relacional (PDF): `porcentagem-comissao` — para gado Gordo em modalidade
+> arroba/kg guarda R$ por arroba; nos demais casos guarda percentual.
+
+**Exclusão de fazenda, pecuarista e comprador:** `DELETE /fazendas/:id`, `/pecuaristas/:id` e `/compradores/:id` respondem `409` enquanto houver negócios ligados ao registro (a mensagem traz a quantidade). Exclua os negócios antes.
 
 **Permissões por perfil (comissão):** para usuário `Normal`, toda resposta de negócio
-(`GET /negocios`, `GET /negocios/:id`, `POST`, `PATCH`, `PATCH /concluir`) traz `comissao` e
-`porcentagem_comissao` como `null` (os campos continuam presentes). `porcentagem_comissao` enviado
+(`GET /negocios`, `GET /negocios/:id`, `POST`, `PATCH`, `PATCH /concluir`) traz `comissao`,
+`porcentagem_comissao` e `modo_comissao` como `null` (os campos continuam presentes). `porcentagem_comissao` enviado
 por um Normal é **ignorado em silêncio** (sem `400`; na edição o valor gravado é preservado; na
 criação fica `null` até um Admin preencher). Admin recebe e envia normalmente.
 

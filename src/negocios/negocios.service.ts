@@ -19,6 +19,7 @@ import {
   calcularImpostos,
   calcularLote,
   calcularNegocio,
+  modoComissao,
   type AgregadosLote,
   type GadoCalculado,
 } from './calculo.util';
@@ -37,6 +38,7 @@ const SELECT_ALIQUOTAS = {
 const SELECT_CALCULO = {
   empresa_id: true,
   modalidade: true,
+  tipo_gado: true,
   tipo_negocio: true,
   porcentagem_comissao: true,
   ...SELECT_ALIQUOTAS,
@@ -219,6 +221,11 @@ export class NegociosService {
     const atual = await this.findOne(negocioId);
     const modalidade = dto.modalidade ?? atual.modalidade;
     const trocouModalidade = modalidade !== atual.modalidade;
+    // Mudar o tipo de gado ou a modalidade pode mudar o que o valor da comissão significa
+    // (R$ por arroba ↔ percentual): o valor antigo é descartado, salvo se vier um novo junto.
+    const trocouModoComissao =
+      modoComissao(dto.tipo_gado ?? atual.tipo_gado, modalidade) !==
+      modoComissao(atual.tipo_gado, atual.modalidade);
     const qtdGados = atual.lotes.reduce((soma, l) => soma + l.gados.length, 0);
 
     // "cabeca" tem um único lote e nenhuma pesagem individual.
@@ -247,6 +254,9 @@ export class NegociosService {
             ...dto,
             ...(dto.data_negocio
               ? { data_negocio: new Date(dto.data_negocio) }
+              : {}),
+            ...(trocouModoComissao && dto.porcentagem_comissao === undefined
+              ? { porcentagem_comissao: null }
               : {}),
           },
         });
@@ -338,6 +348,7 @@ export class NegociosService {
   /**
    * Recalcula os agregados de todos os lotes do negócio e os do próprio negócio
    * (quantidade, valores, pesos, extremos, rendimento médio, comissão, Funrural e Senar).
+   * A comissão depende de tipo_gado e modalidade (ver modoComissao).
    * Roda na transação de quem chama — criar/editar/excluir lote ou gado, mover gado entre
    * lotes, mudar tipo de negócio, comissão ou modalidade.
    */
@@ -373,15 +384,18 @@ export class NegociosService {
     }
 
     const agregados = calcularNegocio(agregadosLotes, todosGados);
-    const porcentagem = negocio.porcentagem_comissao?.toNumber();
     const aliquotas = await this.aliquotasDoNegocio(tx, negocio);
     await tx.negocio.update({
       where: { negocio_id: negocioId },
       data: {
         ...agregados,
-        ...(porcentagem != null
-          ? { comissao: calcularComissao(agregados.valor_total, porcentagem) }
-          : {}),
+        comissao: calcularComissao({
+          tipoGado: negocio.tipo_gado,
+          modalidade: negocio.modalidade,
+          valorTotal: agregados.valor_total,
+          pesoTotalQuilos: agregados.peso_total_quilos ?? 0,
+          valorInformado: negocio.porcentagem_comissao?.toNumber() ?? null,
+        }),
         ...aliquotas,
         ...calcularImpostos(
           agregados.valor_total,
