@@ -8,6 +8,10 @@ import {
   MaxLength,
   ValidateIf,
 } from 'class-validator';
+import {
+  CnpjOpcional,
+  InscricaoEstadual,
+} from '../../common/documentos.util';
 import { IsLocalizacaoGoogle } from '../../common/localizacao.util';
 
 const fazendaNova = (o: FazendaDoPecuaristaDto) => o.fazenda_id === undefined;
@@ -40,12 +44,27 @@ export class FazendaDoPecuaristaDto {
   @MaxLength(20)
   municipio?: string;
 
-  @ApiPropertyOptional({ maxLength: 12, description: 'Fazenda nova.' })
+  @ApiPropertyOptional({
+    maxLength: 12,
+    example: '28.766.688-3',
+    description: 'Fazenda nova. Inscrição estadual (MS), 00.000.000-0.',
+  })
   @ValidateIf(fazendaNova)
   @IsString()
   @IsNotEmpty()
+  @InscricaoEstadual()
   @MaxLength(12)
   inscricao_estadual?: string;
+
+  @ApiPropertyOptional({
+    maxLength: 18,
+    nullable: true,
+    description: 'Fazenda nova, opcional. CNPJ próprio da fazenda (mesmas regras de CreateFazendaDto).',
+  })
+  @IsOptional()
+  @CnpjOpcional()
+  @MaxLength(18)
+  cnpj?: string | null;
 
   @ApiPropertyOptional({
     maxLength: 500,

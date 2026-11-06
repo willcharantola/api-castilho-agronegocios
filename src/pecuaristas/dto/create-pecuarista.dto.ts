@@ -11,6 +11,7 @@ import {
   MaxLength,
   ValidateNested,
 } from 'class-validator';
+import { CpfCnpj } from '../../common/documentos.util';
 import { FazendaDoPecuaristaDto } from './fazenda-do-pecuarista.dto';
 
 export class CreatePecuaristaDto {
@@ -24,9 +25,16 @@ export class CreatePecuaristaDto {
   @IsIn(['fisico', 'juridico'])
   fisico_juridico: string;
 
-  @ApiProperty({ maxLength: 20 })
+  @ApiProperty({
+    maxLength: 20,
+    example: '123.456.789-09',
+    description:
+      'CPF (pessoa física) ou CNPJ (jurídica), conforme fisico_juridico, com dígitos ' +
+      'verificadores válidos. Aceita sem pontuação; é gravado formatado.',
+  })
   @IsString()
   @IsNotEmpty()
+  @CpfCnpj()
   @MaxLength(20)
   cpf_cnpj: string;
 

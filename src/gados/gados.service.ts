@@ -19,8 +19,14 @@ const SELECT_LOTE_CALCULO = {
   lote_id: true,
   negocio_id: true,
   rendimento_carcaca: true,
-  valor_unidade: true,
-  negocio: { select: { empresa_id: true, modalidade: true } },
+  negocio: {
+    select: {
+      empresa_id: true,
+      modalidade: true,
+      tipo_gado: true,
+      valor_unidade: true,
+    },
+  },
 } as const;
 
 @Injectable()
@@ -58,7 +64,8 @@ export class GadosService {
       lote.negocio.modalidade,
       pesoTotal,
       lote.rendimento_carcaca.toNumber(),
-      lote.valor_unidade.toNumber(),
+      lote.negocio.valor_unidade.toNumber(),
+      lote.negocio.tipo_gado,
     );
   }
 
@@ -127,7 +134,7 @@ export class GadosService {
       empresaId,
     );
 
-    // Trocar de lote troca o rendimento e o valor da unidade usados no cálculo; o lote
+    // Trocar de lote troca o rendimento usado no cálculo; o lote
     // novo precisa ser do mesmo negócio.
     const loteDestino =
       dto.lote_id !== undefined && dto.lote_id !== atual.lote_id

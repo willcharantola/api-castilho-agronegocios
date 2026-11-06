@@ -1,3 +1,4 @@
+import { comCompradorUnificado } from './comprador.util';
 import type { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
 import { CreateNegocioDto } from './dto/create-negocio.dto';
 import { NegociosController } from './negocios.controller';
@@ -19,7 +20,8 @@ const NEGOCIO = {
   comissao: 50,
   porcentagem_comissao: 5,
 };
-const NEGOCIO_ADMIN = { ...NEGOCIO, modo_comissao: 'por_arroba' };
+// Sem as relações do comprador carregadas, `comprador` sai null (ver comCompradorUnificado).
+const NEGOCIO_ADMIN = { ...NEGOCIO, modo_comissao: 'por_arroba', comprador: null };
 
 function criarController() {
   const service = {
@@ -105,5 +107,52 @@ describe('NegociosController — comissão por perfil', () => {
       '2026-11-01',
       undefined,
     );
+  });
+});
+
+describe('comCompradorUnificado', () => {
+  it('frigorífico e pecuarista saem no mesmo formato, sem as relações gravadas', () => {
+    const frigorifico = comCompradorUnificado({
+      negocio_id: 1,
+      comprador: {
+        comprador_id: 3,
+        nome_empresa: 'Frigorífico X',
+        cnpj: '11.222.333/0001-81',
+        municipio: 'Campo Grande',
+        pessoa_contato: 'Fulano',
+      },
+      comprador_pecuarista: null,
+    });
+    expect(frigorifico).toEqual({
+      negocio_id: 1,
+      comprador: {
+        tipo: 'frigorifico',
+        id: 3,
+        nome: 'Frigorífico X',
+        documento: '11.222.333/0001-81',
+        municipio: 'Campo Grande',
+        pessoa_contato: 'Fulano',
+      },
+    });
+
+    const pecuarista = comCompradorUnificado({
+      negocio_id: 2,
+      comprador: null,
+      comprador_pecuarista: {
+        pecuarista_id: 8,
+        nome_pecuarista: 'José',
+        cpf_cnpj: '000.000.000-00',
+        pecuarista_fazenda: [{ fazenda: { municipio: 'Dourados' } }],
+      },
+    });
+    expect(pecuarista.comprador).toEqual({
+      tipo: 'pecuarista',
+      id: 8,
+      nome: 'José',
+      documento: '000.000.000-00',
+      municipio: 'Dourados',
+      pessoa_contato: null,
+    });
+    expect(pecuarista).not.toHaveProperty('comprador_pecuarista');
   });
 });

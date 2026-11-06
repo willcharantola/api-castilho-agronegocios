@@ -131,11 +131,18 @@ Base URL: `NEXT_PUBLIC_API_URL`. Todos exigem JWT exceto os marcados como **púb
 | Lotes | `GET/POST /negocios/:negocioId/lotes`, `GET/PATCH/DELETE /lotes/:id` | `DELETE` responde `409` se o lote tiver cabeças |
 | Gados | `GET/POST /gados`, `GET/PATCH/DELETE /gados/:id` | Cada gado pertence a um `lote_id` (e ao negócio pelo lote) |
 | Configurações | `GET /configuracoes/impostos`, `PATCH /configuracoes/impostos` | Alíquotas da empresa do usuário logado. `PATCH` **exige `Admin`** |
+| Compradores (frigoríficos) | `GET/POST /compradores`, `GET /compradores/opcoes?busca=&limite=&pagina=`, `GET/PATCH/DELETE /compradores/:id` | Sem `telefone` (bd-12). `opcoes` devolve frigoríficos **e** pecuaristas no formato do comprador unificado, ordenados por nome: `{ itens, total }` |
+| Tipos de gado | `GET /tipos-gado`, `POST /tipos-gado`, `PATCH/DELETE /tipos-gado/:id` | Nomes sugeridos para lotes, da empresa do JWT. `POST/PATCH/DELETE` **exigem `Admin`**; nome repetido (sem maiúsculas) → `409` |
 
 A documentação interativa (Swagger) está em `${NEXT_PUBLIC_API_URL}/docs` — útil para explorar
 payloads exatos e testar chamadas com o botão "Authorize".
 
 ## 5. Nomes dos campos (importante)
+
+**Documentos (validados pela API, gravados formatados):** `pecuarista.cpf_cnpj` precisa ser CPF válido
+(pessoa `"fisico"`) ou CNPJ válido (`"juridico"`); `comprador.cnpj` e `fazenda.cnpj` (opcional) precisam
+ser CNPJ válido; `fazenda.inscricao_estadual` segue o formato de MS `00.000.000-0`. Todos aceitam só os
+dígitos. Dígito verificador errado ou formato inválido → `400`.
 
 Os nomes de campo vêm direto das colunas do banco (não são `camelCase`, são `snake_case` com
 prefixo da entidade nas chaves primárias). Isso é diferente do que muitas convenções de front-end
@@ -149,7 +156,9 @@ usam — ajuste os `types`/`interfaces` do Next.js de acordo.
 — **`senha` nunca é retornada** pela API, só é aceita no `POST`/`PATCH`.
 
 ### `fazenda`
-`fazenda_id`, `nome_fazenda`, `municipio`, `inscricao_estadual`, `marca_url`, `marca_escrita`,
+`fazenda_id`, `nome_fazenda`, `municipio`, `cnpj` (opcional: aceita com ou sem pontuação, grava
+`00.000.000/0000-00`; dígitos verificadores inválidos → `400`; `''`/`null` limpa),
+`inscricao_estadual`, `marca_url`, `marca_escrita`,
 `endereco_fazenda` (opcional, até 200) e `localizacao_google` (opcional, até 500): link https do
 Google Maps (`www.google.com/maps`, `google.com/maps`, `maps.google.com`, `maps.app.goo.gl`,
 `goo.gl/maps`) **ou** coordenadas `"latitude,longitude"` com ponto decimal (ex.: `-20.7123,-51.6543`,
@@ -171,11 +180,29 @@ reenviar com o mesmo `uuid_origem` (do pecuarista e de cada fazenda nova) não d
 
 ### `negocio`
 Campos enviados pelo front no `POST`/`PATCH`:
-`empresa_id`, `pecuarista_id`, `fazenda_id`, `comprador_id`, `modalidade` (`"arroba"` | `"kg"` | `"cabeca"`),
+`empresa_id`, `pecuarista_id`, `fazenda_id`, `comprador` (`{ "tipo": "frigorifico" | "pecuarista", "id": 12 }`),
+`valor_unidade` (obrigatório, ≥ 0, 2 casas: R$/@, R$/kg ou R$/cabeça conforme a modalidade — **um só
+para todos os lotes**), `modalidade` (`"arroba"` | `"kg"` | `"cabeca"`),
 `tipo_gado` (`"Gordo"` | `"Reposicao"`), `tipo_negocio` (`"Desconto em folha"` | `"Livre"` | `"Funrural"`),
 `data_negocio` (ISO 8601), `porcentagem_comissao` (0–100, 2 casas; R$/@ ou %, ver abaixo), `observacao`.
-`tipo_lote`, `valor_unidade`, `media_carimbo`, os rendimentos por raça, `qtd_animais` e
-`valor_total` **não são mais aceitos** (`400`): tipo, valor, carimbo e rendimento são do lote.
+`comprador_id` (formato antigo), `tipo_lote`, `media_carimbo`, os rendimentos por raça, `qtd_animais` e
+`valor_total` **não são aceitos** (`400`).
+
+**Comprador (bd-12): frigorífico ou pecuarista.** A API grava `comprador_id` (frigorífico) **ou**
+`comprador_pecuarista_id` (pecuarista) e deixa a outra coluna `null`. Sem comprador → `400` "Informe o
+comprador"; id inexistente → `400` "Comprador não encontrado"; pecuarista igual ao `pecuarista_id`
+(inclusive ao trocar o vendedor num `PATCH`) → `400` "O comprador não pode ser o próprio vendedor".
+Toda resposta de negócio traz `comprador` unificado (as duas colunas continuam presentes):
+
+```json
+{ "tipo": "frigorifico", "id": 3, "nome": "Frigorífico X", "documento": "00.000.000/0001-00",
+  "municipio": "Campo Grande", "pessoa_contato": "Fulano" }
+```
+
+Para pecuarista: `nome` = nome do pecuarista, `documento` = CPF/CNPJ, `municipio` = o da primeira
+fazenda dele, `pessoa_contato` = `null`. Mudar `valor_unidade` (ou a modalidade) recalcula todas as
+cabeças, lotes, comissão e impostos do negócio. Pecuarista ou frigorífico com negócios (como vendedor
+ou comprador) não pode ser excluído (`409`).
 
 A fazenda precisa estar vinculada ao pecuarista (FK composta no banco): senão, `400` "A fazenda não
 pertence ao pecuarista selecionado". Mudar o `tipo_negocio` recalcula Funrural e Senar.
@@ -240,10 +267,11 @@ passam a ter rendimento 100. As cabeças são recalculadas.
 ### `lote`
 `POST /negocios/:negocioId/lotes` e `PATCH /lotes/:id`:
 `nome_lote` (até 30, **único no negócio** ignorando maiúsculas/minúsculas — repetido dá `400`),
-`valor_unidade` (R$/@, R$/kg ou R$/cabeça conforme a modalidade, 2 casas), `tipo_lote`
-(`"Vaca"` | `"Boi"` | `"Novilha"` | `"Garrote"` | `"Bezerro"` | `"Variados"`), `genero`
-(`"Macho"` | `"Femea"`), `rendimento_carcaca` (0–100, 2 casas), `media_carimbo` (texto livre, até 30),
-`ano_carimbo` (4 dígitos), `uuid_origem?` (só no `POST`).
+`tipo_lote` (`"Vaca"` | `"Boi"` | `"Novilha"` | `"Garrote"` | `"Bezerro"` | `"Variados"`), `genero`
+(`"Macho"` | `"Femea"`), `rendimento_carcaca` (0–100, 2 casas), `media_carimbo` (opcional, texto livre,
+até 30) e `ano_carimbo` (opcional, 4 dígitos) — `''` vira `null` —, `uuid_origem?` (só no `POST`).
+`valor_unidade` **não é mais do lote** (bd-12: enviado, `400`); o preço é o do negócio.
+O nome do lote é texto livre: as sugestões vêm de `GET /tipos-gado` (o nome é copiado, sem ligação).
 
 Regras por modalidade do negócio:
 - `"arroba"`: `nome_lote` e `rendimento_carcaca` obrigatórios.
@@ -253,10 +281,9 @@ Regras por modalidade do negócio:
   `qtd_animais` nas outras modalidades dá `400`.
 
 Calculados pela API: `qtd_animais` (cabeças pesadas; em `"cabeca"`, a informada),
-`valor_total_lote` (soma das cabeças; em `"cabeca"`, `valor_unidade × qtd_animais`),
+`valor_total_lote` (soma das cabeças; em `"cabeca"`, `negocio.valor_unidade × qtd_animais`),
 `valor_medio_cabeca_lote`, pesos totais/médios, mais pesado/mais leve (quilos e arroba) e
-`rendimento_medio`. Mudar `rendimento_carcaca` ou `valor_unidade` recalcula as cabeças do lote, o
-lote e o negócio. `DELETE /lotes/:id` com cabeças responde `409` ("Este lote tem X cabeças
+`rendimento_medio`. Mudar `rendimento_carcaca` recalcula as cabeças do lote, o lote e o negócio. `DELETE /lotes/:id` com cabeças responde `409` ("Este lote tem X cabeças
 pesadas. Remova ou mova as cabeças antes de excluir").
 
 ### `gado`
@@ -268,9 +295,10 @@ e recalcula os dois lotes. Negócio `"cabeca"` não aceita gados (`400`).
 
 Calculados pela API (não enviar): `gado_id`, `peso_calculo`, `peso_arroba`, `valor_total`:
 - `"arroba"`: `peso_calculo = peso_total × rendimento_carcaca do lote / 100`, `peso_arroba =
-  peso_calculo / 15`, `valor_total = peso_arroba × valor_unidade`.
-- `"kg"`: `peso_calculo = peso_total`, `peso_arroba = peso_total / 15`, `valor_total = peso_total ×
-  valor_unidade`.
+  peso_calculo / 15`, `valor_total = peso_arroba × negocio.valor_unidade`.
+- `"kg"`: `peso_calculo = peso_total`, `peso_arroba = peso_total / 15` (Gordo) ou `peso_total / 30`
+  (Reposição), `valor_total = peso_total × negocio.valor_unidade`. A arroba é só informativa: não muda o valor.
+  Trocar o `tipo_gado` de um negócio `"kg"` recalcula as cabeças de todos os lotes.
 
 Lotes e gados só são visíveis/alteráveis para usuários da empresa do negócio (outra empresa → `404`).
 

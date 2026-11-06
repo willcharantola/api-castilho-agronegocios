@@ -1,6 +1,8 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 import {
   IsDateString,
+  IsDefined,
   IsIn,
   IsInt,
   IsNumber,
@@ -10,8 +12,10 @@ import {
   Max,
   MaxLength,
   Min,
+  ValidateNested,
 } from 'class-validator';
 import { MODALIDADES, TIPOS_GADO, TIPOS_NEGOCIO } from '../../common/dominio';
+import { CompradorDoNegocioDto } from './comprador-do-negocio.dto';
 
 export class CreateNegocioDto {
   @ApiProperty()
@@ -26,9 +30,17 @@ export class CreateNegocioDto {
   @IsInt()
   pecuarista_id: number;
 
-  @ApiProperty()
-  @IsInt()
-  comprador_id: number;
+  @ApiProperty({
+    type: CompradorDoNegocioDto,
+    example: { tipo: 'frigorifico', id: 3 },
+    description:
+      'Frigorífico ou pecuarista. Um pecuarista não pode comprar do próprio negócio ' +
+      '(id igual a pecuarista_id → 400).',
+  })
+  @IsDefined({ message: 'Informe o comprador' })
+  @ValidateNested()
+  @Type(() => CompradorDoNegocioDto)
+  comprador: CompradorDoNegocioDto;
 
   // hora_inicio_pesagem e hora_fim_pesagem não são aceitos do cliente: o servidor os
   // registra no primeiro POST /gados do negócio e em PATCH /negocios/:id/concluir.
@@ -49,6 +61,16 @@ export class CreateNegocioDto {
   })
   @IsIn(TIPOS_NEGOCIO)
   tipo_negocio: string;
+
+  @ApiProperty({
+    minimum: 0,
+    description:
+      'Preço por unidade, o mesmo para todos os lotes: R$ por arroba, por kg ou por ' +
+      'cabeça, conforme a modalidade. Alterá-lo recalcula todas as cabeças e lotes.',
+  })
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  valor_unidade: number;
 
   @ApiProperty({ example: '2026-09-09T00:00:00.000Z' })
   @IsDateString()
@@ -75,7 +97,7 @@ export class CreateNegocioDto {
   @MaxLength(100)
   observacao?: string;
 
-  // Tipo de lote, valor da unidade, carimbo e rendimento pertencem ao lote
+  // Tipo de lote, carimbo e rendimento pertencem ao lote
   // (POST /negocios/:id/lotes): enviados aqui, o forbidNonWhitelisted responde 400.
   // valor_total, valor_medio, qtd_animais, pesos, mais pesado/mais leve, rendimento médio,
   // comissao (R$), funrural e senar são agregados calculados pela API a partir dos lotes e

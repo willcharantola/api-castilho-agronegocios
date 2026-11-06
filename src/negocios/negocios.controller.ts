@@ -27,11 +27,23 @@ import {
   semCamposDeComissao,
 } from '../auth/permissoes.util';
 import { comModoComissao } from './calculo.util';
+import { comCompradorUnificado } from './comprador.util';
 import { ConcluirNegocioDto } from './dto/concluir-negocio.dto';
 import { CreateNegocioDto } from './dto/create-negocio.dto';
 import { FindNegociosQueryDto } from './dto/find-negocios-query.dto';
 import { UpdateNegocioDto } from './dto/update-negocio.dto';
 import { NegociosService } from './negocios.service';
+
+/** Negócio como a API devolve: modo da comissão, comprador unificado e comissão por perfil. */
+function apresentar<
+  T extends Parameters<typeof comModoComissao>[0] &
+    Parameters<typeof comCompradorUnificado>[0],
+>(negocio: T, user: AuthenticatedUser) {
+  return ocultarCamposDeComissao(
+    comCompradorUnificado(comModoComissao(negocio)),
+    user,
+  );
+}
 
 // Comissão (valor, valor informado e modo_comissao) é restrita a Admin: para o usuário
 // Normal toda resposta de negócio sai com esses campos `null`, e os enviados por ele são
@@ -50,7 +62,7 @@ export class NegociosController {
     const negocio = await this.negociosService.create(
       semCamposDeComissao(dto, user),
     );
-    return ocultarCamposDeComissao(comModoComissao(negocio), user);
+    return apresentar(negocio, user);
   }
 
   @ApiQuery({ name: 'fazenda_id', required: false, type: Number })
@@ -66,7 +78,7 @@ export class NegociosController {
       query.data_inicio,
       query.data_fim,
     );
-    return ocultarCamposDeComissao(negocios.map(comModoComissao), user);
+    return negocios.map((negocio) => apresentar(negocio, user));
   }
 
   @ApiOperation({
@@ -96,10 +108,7 @@ export class NegociosController {
     @CurrentUser() user: AuthenticatedUser,
     @Param('id', ParseIntPipe) id: number,
   ) {
-    return ocultarCamposDeComissao(
-      comModoComissao(await this.negociosService.findOne(id)),
-      user,
-    );
+    return apresentar(await this.negociosService.findOne(id), user);
   }
 
   @Patch(':id')
@@ -112,7 +121,7 @@ export class NegociosController {
       id,
       semCamposDeComissao(dto, user),
     );
-    return ocultarCamposDeComissao(comModoComissao(negocio), user);
+    return apresentar(negocio, user);
   }
 
   // Chamado pelo botão "Concluir" do cadastro: registra hora_fim_pesagem (hora local do cliente).
@@ -134,7 +143,7 @@ export class NegociosController {
       fuso,
       dto.hora_fim_pesagem,
     );
-    return negocio && ocultarCamposDeComissao(comModoComissao(negocio), user);
+    return negocio && apresentar(negocio, user);
   }
 
   // Exclusão de negócios é uma ação sensível: restrita a nivel_acesso "Admin".

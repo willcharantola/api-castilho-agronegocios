@@ -5,7 +5,9 @@ import { CreateFazendaDto } from '../fazendas/dto/create-fazenda.dto';
 import { CreateLoteDto } from '../lotes/dto/create-lote.dto';
 import { UpdateNegocioDto } from '../negocios/dto/update-negocio.dto';
 import { CreateNegocioDto } from '../negocios/dto/create-negocio.dto';
+import { CreateCompradorDto } from '../compradores/dto/create-comprador.dto';
 import { CreatePecuaristaDto } from '../pecuaristas/dto/create-pecuarista.dto';
+import { UpdatePecuaristaDto } from '../pecuaristas/dto/update-pecuarista.dto';
 
 // Mesma configuração do main.ts: campos fora do DTO geram 400.
 const pipe = new ValidationPipe({
@@ -25,7 +27,6 @@ const GADO = {
 
 const LOTE = {
   nome_lote: 'Bois Nelore',
-  valor_unidade: 310,
   tipo_lote: 'Boi',
   genero: 'Macho',
   rendimento_carcaca: 53.5,
@@ -43,8 +44,9 @@ const NEGOCIO = {
   empresa_id: 1,
   fazenda_id: 1,
   pecuarista_id: 1,
-  comprador_id: 1,
+  comprador: { tipo: 'frigorifico', id: 1 },
   modalidade: 'arroba',
+  valor_unidade: 310,
   tipo_gado: 'Gordo',
   tipo_negocio: 'Funrural',
   data_negocio: '2026-10-26T00:00:00.000Z',
@@ -53,7 +55,7 @@ const NEGOCIO = {
 const PECUARISTA = {
   nome_pecuarista: 'João',
   fisico_juridico: 'fisico',
-  cpf_cnpj: '000.000.000-00',
+  cpf_cnpj: '529.982.247-25',
   banco: 'BB',
   agencia: '1234-5',
   conta: '12345-6',
@@ -103,10 +105,22 @@ describe('DTOs do novo modelo de dados', () => {
       ['media_carimbo', 'x'.repeat(31)],
       ['qtd_animais', 0],
       ['valor_total_lote', 100],
+      ['valor_unidade', 310],
     ])('recusa %s = %p', async (campo, valor) => {
       await expect(
         validar(CreateLoteDto, { ...LOTE, [campo]: valor }),
       ).rejects.toThrow();
+    });
+
+    it('carimbo e ano são opcionais; vazio vira null', async () => {
+      const { media_carimbo: _m, ano_carimbo: _a, ...semCarimbo } = LOTE;
+      await expect(validar(CreateLoteDto, semCarimbo)).resolves.toBeDefined();
+      await expect(
+        validar(CreateLoteDto, { ...LOTE, media_carimbo: '', ano_carimbo: ' ' }),
+      ).resolves.toMatchObject({ media_carimbo: null, ano_carimbo: null });
+      await expect(
+        validar(CreateLoteDto, { ...LOTE, media_carimbo: null, ano_carimbo: null }),
+      ).resolves.toBeDefined();
     });
 
     it('media_carimbo é texto livre', async () => {
@@ -114,6 +128,127 @@ describe('DTOs do novo modelo de dados', () => {
         validar(CreateLoteDto, { ...LOTE, media_carimbo: '8,9 e 10' }),
       ).resolves.toBeDefined();
     });
+  });
+
+  describe('documentos: CPF, CNPJ e inscrição estadual', () => {
+    it.each([
+      ['fisico', '52998224725', '529.982.247-25'],
+      ['fisico', '529.982.247-25', '529.982.247-25'],
+      ['juridico', '11222333000181', '11.222.333/0001-81'],
+    ])('pecuarista %s aceita %s e grava %s', async (fisico_juridico, cpf_cnpj, gravado) => {
+      await expect(
+        validar(CreatePecuaristaDto, {
+          ...PECUARISTA,
+          fisico_juridico,
+          cpf_cnpj,
+          fazendas: [{ fazenda_id: 1 }],
+        }),
+      ).resolves.toMatchObject({ cpf_cnpj: gravado });
+    });
+
+    it.each([
+      ['fisico', '529.982.247-26'],
+      ['fisico', '111.111.111-11'],
+      ['fisico', '11.222.333/0001-81'],
+      ['juridico', '529.982.247-25'],
+      ['juridico', '61.784.229/004-00'],
+      ['fisico', ''],
+    ])('pecuarista %s recusa %p', async (fisico_juridico, cpf_cnpj) => {
+      await expect(
+        validar(CreatePecuaristaDto, {
+          ...PECUARISTA,
+          fisico_juridico,
+          cpf_cnpj,
+          fazendas: [{ fazenda_id: 1 }],
+        }),
+      ).rejects.toThrow();
+    });
+
+    it('PATCH só com o documento aceita CPF ou CNPJ válido', async () => {
+      await expect(
+        validar(UpdatePecuaristaDto, { cpf_cnpj: '11222333000181' }),
+      ).resolves.toMatchObject({ cpf_cnpj: '11.222.333/0001-81' });
+      await expect(
+        validar(UpdatePecuaristaDto, { cpf_cnpj: '123' }),
+      ).rejects.toThrow();
+    });
+
+    it('frigorífico exige CNPJ válido', async () => {
+      const COMPRADOR = {
+        nome_empresa: 'Frigorífico X',
+        municipio: 'Campo Grande',
+        pessoa_contato: 'Fulano',
+      };
+      await expect(
+        validar(CreateCompradorDto, { ...COMPRADOR, cnpj: '11222333000181' }),
+      ).resolves.toMatchObject({ cnpj: '11.222.333/0001-81' });
+      await expect(
+        validar(CreateCompradorDto, { ...COMPRADOR, cnpj: '11.222.333/0001-82' }),
+      ).rejects.toThrow();
+    });
+
+    it.each([
+      ['28.766.688-3', '28.766.688-3'],
+      ['287666883', '28.766.688-3'],
+    ])('inscrição estadual aceita %s e grava %s', async (inscricao_estadual, gravado) => {
+      await expect(
+        validar(CreateFazendaDto, { ...FAZENDA, inscricao_estadual }),
+      ).resolves.toMatchObject({ inscricao_estadual: gravado });
+    });
+
+    it.each(['28766688', '28.766.688-34', 'ABC', '28-766-688.3'])(
+      'inscrição estadual recusa %s',
+      async (inscricao_estadual) => {
+        await expect(
+          validar(CreateFazendaDto, { ...FAZENDA, inscricao_estadual }),
+        ).rejects.toThrow();
+      },
+    );
+
+    it('fazenda nova dentro do pecuarista aceita CNPJ e valida a inscrição', async () => {
+      const fazenda = { nome_fazenda: 'Paturi', municipio: 'Jatei/MS' };
+      await expect(
+        validar(CreatePecuaristaDto, {
+          ...PECUARISTA,
+          fazendas: [{ ...fazenda, inscricao_estadual: '287666883', cnpj: '11222333000181' }],
+        }),
+      ).resolves.toMatchObject({
+        fazendas: [{ inscricao_estadual: '28.766.688-3', cnpj: '11.222.333/0001-81' }],
+      });
+      await expect(
+        validar(CreatePecuaristaDto, {
+          ...PECUARISTA,
+          fazendas: [{ ...fazenda, inscricao_estadual: '123' }],
+        }),
+      ).rejects.toThrow();
+    });
+  });
+
+  describe('fazenda: CNPJ', () => {
+    it('é opcional; vazio vira null', async () => {
+      await expect(validar(CreateFazendaDto, FAZENDA)).resolves.toBeDefined();
+      await expect(
+        validar(CreateFazendaDto, { ...FAZENDA, cnpj: '' }),
+      ).resolves.toMatchObject({ cnpj: null });
+    });
+
+    it.each(['11.222.333/0001-81', '11222333000181'])(
+      'aceita %s e grava formatado',
+      async (cnpj) => {
+        await expect(
+          validar(CreateFazendaDto, { ...FAZENDA, cnpj }),
+        ).resolves.toMatchObject({ cnpj: '11.222.333/0001-81' });
+      },
+    );
+
+    it.each(['11.222.333/0001-82', '1122233300018', '11.111.111/1111-11', 'abc'])(
+      'recusa %s',
+      async (cnpj) => {
+        await expect(
+          validar(CreateFazendaDto, { ...FAZENDA, cnpj }),
+        ).rejects.toThrow();
+      },
+    );
   });
 
   describe('fazenda: localização', () => {
@@ -194,7 +329,6 @@ describe('DTOs do novo modelo de dados', () => {
 
     it.each([
       ['tipo_lote', 'Boi'],
-      ['valor_unidade', 300],
       ['media_carimbo', '08/23'],
       ['porcentagem_rendimento_nelore', 52],
     ])('recusa o campo que passou para o lote: %s', async (campo, valor) => {
@@ -204,6 +338,37 @@ describe('DTOs do novo modelo de dados', () => {
       await expect(
         validar(UpdateNegocioDto, { [campo]: valor }),
       ).rejects.toThrow();
+    });
+
+    it('exige o valor da unidade e o comprador', async () => {
+      const { valor_unidade: _v, ...semValor } = NEGOCIO;
+      await expect(validar(CreateNegocioDto, semValor)).rejects.toThrow();
+      const { comprador: _c, ...semComprador } = NEGOCIO;
+      await expect(validar(CreateNegocioDto, semComprador)).rejects.toThrow();
+    });
+
+    it.each([
+      [{ tipo: 'cliente', id: 1 }],
+      [{ tipo: 'pecuarista', id: 0 }],
+      [{ tipo: 'frigorifico' }],
+    ])('recusa comprador %p', async (comprador) => {
+      await expect(
+        validar(CreateNegocioDto, { ...NEGOCIO, comprador }),
+      ).rejects.toThrow();
+      await expect(validar(UpdateNegocioDto, { comprador })).rejects.toThrow();
+    });
+
+    it('recusa o comprador_id antigo', async () => {
+      await expect(
+        validar(CreateNegocioDto, { ...NEGOCIO, comprador_id: 1 }),
+      ).rejects.toThrow();
+    });
+
+    it('PATCH aceita só o comprador ou só o valor da unidade', async () => {
+      await expect(
+        validar(UpdateNegocioDto, { comprador: { tipo: 'pecuarista', id: 2 } }),
+      ).resolves.toBeDefined();
+      await expect(validar(UpdateNegocioDto, { valor_unidade: 320 })).resolves.toBeDefined();
     });
 
     it('PATCH não aceita qtd_animais nem valor_total (agora são do lote)', async () => {
