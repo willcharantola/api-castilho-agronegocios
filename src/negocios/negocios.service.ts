@@ -19,6 +19,7 @@ import {
   calcularImpostos,
   calcularLote,
   calcularNegocio,
+  calcularValorLiquido,
   modoComissao,
   type AgregadosLote,
   type GadoCalculado,
@@ -42,7 +43,6 @@ const SELECT_CALCULO = {
   modalidade: true,
   tipo_gado: true,
   tipo_negocio: true,
-  valor_unidade: true,
   porcentagem_comissao: true,
   ...SELECT_ALIQUOTAS,
 } as const;
@@ -147,7 +147,7 @@ export class NegociosService {
             ...colunas,
             ...aliquotas,
             data_negocio: new Date(dto.data_negocio),
-            // Ainda não há lotes (valor_total = 0), então a comissão em R$ começa em 0
+            // Ainda não há lotes (bruto = 0), então a comissão em R$ começa em 0
             // e é recalculada por recalcular() conforme o valor total muda.
             comissao: dto.porcentagem_comissao != null ? 0 : null,
             // Preenchidos pelo servidor: hora_inicio_pesagem no primeiro gado cadastrado
@@ -156,9 +156,10 @@ export class NegociosService {
             hora_fim_pesagem: null,
             // NOT NULL no banco: começam em 0 e são preenchidos pelo recálculo a partir dos
             // lotes. Pesos, médias, extremos e rendimento médio ficam NULL até haver gados.
-            valor_total: 0,
+            valor_total_bruto: 0,
+            valor_total_liquido: 0,
             qtd_animais: 0,
-            // valor_total = 0 → funrural e senar 0,00 (nunca NULL).
+            // bruto = 0 → funrural e senar 0,00 (nunca NULL).
             ...calcularImpostos(
               0,
               dto.tipo_negocio as TipoNegocio,
@@ -256,10 +257,6 @@ export class NegociosService {
     // Em "kg", a arroba da cabeça depende do tipo de gado (÷ 15 ou ÷ 30, ver kgPorArroba).
     const trocouTipoGado =
       dto.tipo_gado !== undefined && dto.tipo_gado !== atual.tipo_gado;
-    // O preço é um só para todos os lotes: mudá-lo muda o valor de todas as cabeças.
-    const trocouValorUnidade =
-      dto.valor_unidade !== undefined &&
-      dto.valor_unidade !== atual.valor_unidade.toNumber();
 
     // "cabeca" tem um único lote e nenhuma pesagem individual.
     if (
@@ -303,15 +300,12 @@ export class NegociosService {
         });
         if (trocouModalidade) {
           await this.ajustarLotesAModalidade(tx, negocioId, modalidade);
-        } else if (
-          trocouValorUnidade ||
-          (trocouTipoGado && modalidade === 'kg')
-        ) {
+        } else if (trocouTipoGado && modalidade === 'kg') {
           for (const { lote_id } of atual.lotes) {
             await this.recalcularGadosDoLote(tx, lote_id);
           }
         }
-        // valor_total, comissão, Funrural e Senar (dependem do tipo_negocio e do valor).
+        // Bruto, líquido, comissão, Funrural e Senar (dependem do tipo_negocio e do valor).
         await this.recalcular(tx, negocioId);
       });
     } catch (error) {
@@ -374,14 +368,14 @@ export class NegociosService {
 
   /**
    * Recalcula peso_calculo, peso_arroba e valor_total de todas as cabeças do lote, a partir
-   * do rendimento do lote e da modalidade, do tipo de gado e do valor da unidade do negócio.
+   * do rendimento e do preço (valor_unidade) do lote e da modalidade e do tipo de gado do negócio.
    */
   async recalcularGadosDoLote(tx: Prisma.TransactionClient, loteId: number) {
     const lote = await tx.lote.findUniqueOrThrow({
       where: { lote_id: loteId },
       include: {
         negocio: {
-          select: { modalidade: true, tipo_gado: true, valor_unidade: true },
+          select: { modalidade: true, tipo_gado: true },
         },
         gados: true,
       },
@@ -394,7 +388,7 @@ export class NegociosService {
           lote.negocio.modalidade,
           gado.peso_total.toNumber(),
           lote.rendimento_carcaca.toNumber(),
-          lote.negocio.valor_unidade.toNumber(),
+          lote.valor_unidade.toNumber(),
           lote.negocio.tipo_gado,
         ),
       });
@@ -403,7 +397,8 @@ export class NegociosService {
 
   /**
    * Recalcula os agregados de todos os lotes do negócio e os do próprio negócio
-   * (quantidade, valores, pesos, extremos, rendimento médio, comissão, Funrural e Senar).
+   * (quantidade, valores bruto e líquido, pesos, extremos, rendimento médio, comissão,
+   * Funrural e Senar).
    * A comissão depende de tipo_gado e modalidade (ver modoComissao).
    * Roda na transação de quem chama — criar/editar/excluir lote ou gado, mover gado entre
    * lotes, mudar tipo de negócio, comissão ou modalidade.
@@ -426,7 +421,7 @@ export class NegociosService {
       const agregados = calcularLote(
         negocio.modalidade,
         {
-          valor_unidade: negocio.valor_unidade.toNumber(),
+          valor_unidade: lote.valor_unidade.toNumber(),
           qtd_animais: lote.qtd_animais,
         },
         gados,
@@ -441,6 +436,12 @@ export class NegociosService {
 
     const agregados = calcularNegocio(agregadosLotes, todosGados);
     const aliquotas = await this.aliquotasDoNegocio(tx, negocio);
+    const impostos = calcularImpostos(
+      agregados.valor_total_bruto,
+      negocio.tipo_negocio as TipoNegocio,
+      aliquotas.aliquota_funrural,
+      aliquotas.aliquota_senar,
+    );
     await tx.negocio.update({
       where: { negocio_id: negocioId },
       data: {
@@ -448,16 +449,16 @@ export class NegociosService {
         comissao: calcularComissao({
           tipoGado: negocio.tipo_gado,
           modalidade: negocio.modalidade,
-          valorTotal: agregados.valor_total,
+          valorTotal: agregados.valor_total_bruto,
           pesoTotalQuilos: agregados.peso_total_quilos ?? 0,
           valorInformado: negocio.porcentagem_comissao?.toNumber() ?? null,
         }),
         ...aliquotas,
-        ...calcularImpostos(
-          agregados.valor_total,
-          negocio.tipo_negocio as TipoNegocio,
-          aliquotas.aliquota_funrural,
-          aliquotas.aliquota_senar,
+        ...impostos,
+        valor_total_liquido: calcularValorLiquido(
+          agregados.valor_total_bruto,
+          impostos.funrural,
+          impostos.senar,
         ),
       },
     });

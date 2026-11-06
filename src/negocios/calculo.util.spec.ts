@@ -7,6 +7,7 @@ import {
   calcularNegocio,
   calcularRendimentoMedio,
   calcularComissao,
+  calcularValorLiquido,
   comModoComissao,
   kgPorArroba,
   modoComissao,
@@ -22,6 +23,21 @@ const gado = (
 ): GadoCalculado => ({
   peso_total: peso,
   ...calcularGado(modalidade, peso, rendimento, valorUnidade, 'Gordo'),
+});
+
+describe('calcularValorLiquido', () => {
+  it('bruto − Funrural − Senar (negócio 1 do seed: Funrural)', () => {
+    expect(calcularValorLiquido(67696.23, 1015.44, 0)).toBe(66680.79);
+  });
+
+  it('Desconto em folha desconta o Senar; Livre fica igual ao bruto', () => {
+    expect(calcularValorLiquido(100000, 0, 200)).toBe(99800);
+    expect(calcularValorLiquido(100000, 0, 0)).toBe(100000);
+  });
+
+  it('sem ponto flutuante: 0,3 − 0,1 − 0,1 = 0,10', () => {
+    expect(calcularValorLiquido(0.3, 0.1, 0.1)).toBe(0.1);
+  });
 });
 
 describe('calcularImpostos', () => {
@@ -243,7 +259,7 @@ describe('calcularNegocio', () => {
     const r = calcularNegocio([agA, agB], [...loteA, ...loteB]);
 
     expect(r.qtd_animais).toBe(2);
-    expect(r.valor_total).toBe(9558);
+    expect(r.valor_total_bruto).toBe(9558);
     expect(r.valor_medio).toBe(4779);
     expect(r.peso_total_quilos).toBe(900);
     expect(r.mais_pesado_quilos).toBe(600);
@@ -255,7 +271,7 @@ describe('calcularNegocio', () => {
   it('sem lotes: zero e médias null', () => {
     expect(calcularNegocio([], [])).toMatchObject({
       qtd_animais: 0,
-      valor_total: 0,
+      valor_total_bruto: 0,
       valor_medio: null,
       rendimento_medio: null,
     });
@@ -265,7 +281,7 @@ describe('calcularNegocio', () => {
     const lote = calcularLote('cabeca', { valor_unidade: 3000, qtd_animais: 10 }, []);
     expect(calcularNegocio([lote], [])).toMatchObject({
       qtd_animais: 10,
-      valor_total: 30000,
+      valor_total_bruto: 30000,
       valor_medio: 3000,
       peso_total_quilos: null,
     });

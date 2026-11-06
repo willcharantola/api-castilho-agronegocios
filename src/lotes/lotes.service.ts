@@ -109,9 +109,11 @@ export class LotesService {
     ) {
       await this.garantirNomeUnico(atual.negocio_id, campos.nome_lote, loteId);
     }
-    // O valor de cada cabeça depende do rendimento do lote (o preço é o do negócio).
+    // O valor de cada cabeça depende do rendimento e do preço do lote.
     const recalcularGados =
-      campos.rendimento_carcaca !== atual.rendimento_carcaca.toNumber();
+      campos.rendimento_carcaca !== atual.rendimento_carcaca.toNumber() ||
+      (dto.valor_unidade !== undefined &&
+        dto.valor_unidade !== atual.valor_unidade.toNumber());
 
     try {
       return await this.prisma.$transaction(async (tx) => {

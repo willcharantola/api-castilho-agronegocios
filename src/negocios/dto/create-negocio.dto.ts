@@ -62,16 +62,6 @@ export class CreateNegocioDto {
   @IsIn(TIPOS_NEGOCIO)
   tipo_negocio: string;
 
-  @ApiProperty({
-    minimum: 0,
-    description:
-      'Preço por unidade, o mesmo para todos os lotes: R$ por arroba, por kg ou por ' +
-      'cabeça, conforme a modalidade. Alterá-lo recalcula todas as cabeças e lotes.',
-  })
-  @IsNumber({ maxDecimalPlaces: 2 })
-  @Min(0)
-  valor_unidade: number;
-
   @ApiProperty({ example: '2026-09-09T00:00:00.000Z' })
   @IsDateString()
   data_negocio: string;
@@ -82,7 +72,7 @@ export class CreateNegocioDto {
     description:
       'Valor da comissão (0 a 100, 2 casas). Gado Gordo em "arroba"/"kg": R$ por arroba ' +
       'de peso vivo (`comissao` = valor × peso_total_quilos / 15). Demais casos: percentual ' +
-      '(`comissao` = valor_total × valor / 100). Ver `modo_comissao` na resposta. Mudar ' +
+      '(`comissao` = valor_total_bruto × valor / 100). Ver `modo_comissao` na resposta. Mudar ' +
       'tipo_gado ou modalidade de forma que o modo mude descarta o valor (fica null).',
   })
   @IsOptional()
@@ -97,9 +87,9 @@ export class CreateNegocioDto {
   @MaxLength(100)
   observacao?: string;
 
-  // Tipo de lote, carimbo e rendimento pertencem ao lote
+  // Tipo de lote, preço (valor_unidade), carimbo e rendimento pertencem ao lote
   // (POST /negocios/:id/lotes): enviados aqui, o forbidNonWhitelisted responde 400.
-  // valor_total, valor_medio, qtd_animais, pesos, mais pesado/mais leve, rendimento médio,
+  // valor_total_bruto, valor_total_liquido, valor_medio, qtd_animais, pesos, mais pesado/mais leve, rendimento médio,
   // comissao (R$), funrural e senar são agregados calculados pela API a partir dos lotes e
   // gados — também fora do DTO. aliquota_funrural e aliquota_senar são copiadas da empresa
   // na criação.

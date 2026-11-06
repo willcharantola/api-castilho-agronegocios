@@ -64,6 +64,7 @@ const loteGravado = (modalidade: string, gados: unknown[] = []) => ({
   negocio_id: 1,
   nome_lote: 'Bois Nelore',
   rendimento_carcaca: dec(53.5),
+  valor_unidade: dec(310),
   qtd_animais: gados.length,
   gados,
   negocio: { empresa_id: 1, modalidade },
@@ -142,6 +143,23 @@ describe('LotesService.update', () => {
     await servico.update(7, { rendimento_carcaca: 55 }, 1);
     expect(negocios.recalcularGadosDoLote).toHaveBeenCalledWith(tx, 7);
     expect(negocios.recalcular).toHaveBeenCalledWith(tx, 1);
+  });
+
+  it('mudar o preço do lote recalcula as cabeças dele e o negócio', async () => {
+    const { tx, negocios, servico } = criarServico('arroba', {
+      loteAtual: loteGravado('arroba'),
+    });
+    await servico.update(7, { valor_unidade: 320 }, 1);
+    expect(negocios.recalcularGadosDoLote).toHaveBeenCalledWith(tx, 7);
+    expect(negocios.recalcular).toHaveBeenCalledWith(tx, 1);
+  });
+
+  it('o mesmo preço não recalcula as cabeças', async () => {
+    const { negocios, servico } = criarServico('arroba', {
+      loteAtual: loteGravado('arroba'),
+    });
+    await servico.update(7, { valor_unidade: 310 }, 1);
+    expect(negocios.recalcularGadosDoLote).not.toHaveBeenCalled();
   });
 
   it('mudar só o carimbo não recalcula as cabeças', async () => {

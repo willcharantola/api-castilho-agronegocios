@@ -16,7 +16,6 @@ const DTO = {
   pecuarista_id: 3,
   comprador: { tipo: 'frigorifico', id: 4 },
   modalidade: 'arroba',
-  valor_unidade: 300,
   tipo_gado: 'Gordo',
   tipo_negocio: 'Funrural',
   data_negocio: '2026-10-26T00:00:00.000Z',
@@ -72,10 +71,11 @@ describe('NegociosService.create', () => {
       aliquota_senar: 0.2,
       funrural: 0,
       senar: 0,
-      valor_total: 0,
+      valor_total_bruto: 0,
+      valor_total_liquido: 0,
       qtd_animais: 0,
-      valor_unidade: 300,
     });
+    expect(prisma.negocio.create.mock.calls[0][0].data).not.toHaveProperty('valor_unidade');
   });
 
   it('frigorífico como comprador grava só comprador_id', async () => {
@@ -141,14 +141,13 @@ function bancoEmMemoria(modalidade: string, tipoGado = 'Reposicao') {
     modalidade,
     tipo_gado: tipoGado,
     tipo_negocio: 'Funrural',
-    valor_unidade: dec(300),
     porcentagem_comissao: dec(2),
     aliquota_funrural: dec(1.5),
     aliquota_senar: dec(0.2),
   };
   const lotes: Record<string, any>[] = [
-    { lote_id: 10, negocio_id: 1, rendimento_carcaca: dec(50), qtd_animais: 0 },
-    { lote_id: 20, negocio_id: 1, rendimento_carcaca: dec(60), qtd_animais: 0 },
+    { lote_id: 10, negocio_id: 1, rendimento_carcaca: dec(50), valor_unidade: dec(300), qtd_animais: 0 },
+    { lote_id: 20, negocio_id: 1, rendimento_carcaca: dec(60), valor_unidade: dec(300), qtd_animais: 0 },
   ];
   const gados: GadoMem[] = [
     // lote 10: 600 kg × 50% = 300 kg → 20 @ × 300 = 6.000,00
@@ -171,7 +170,6 @@ function bancoEmMemoria(modalidade: string, tipoGado = 'Reposicao') {
         return { ...lote, negocio: {
             modalidade: negocio.modalidade,
             tipo_gado: negocio.tipo_gado,
-            valor_unidade: negocio.valor_unidade,
           }, gados: doLote(lote.lote_id) };
       }),
       update: jest.fn(async ({ where, data }) =>
@@ -201,7 +199,7 @@ describe('NegociosService.recalcular', () => {
     expect(num(lotes[1].rendimento_medio)).toBe(60);
 
     expect(negocio.qtd_animais).toBe(2);
-    expect(num(negocio.valor_total)).toBe(11400);
+    expect(num(negocio.valor_total_bruto)).toBe(11400);
     expect(num(negocio.valor_medio)).toBe(5700);
     expect(num(negocio.mais_pesado_quilos)).toBe(600);
     expect(num(negocio.mais_leve_arroba)).toBe(18);
@@ -209,6 +207,7 @@ describe('NegociosService.recalcular', () => {
     expect(num(negocio.rendimento_medio)).toBeCloseTo(54.2857, 4);
     expect(num(negocio.funrural)).toBe(171); // 11.400 × 1,5%
     expect(num(negocio.senar)).toBe(0);
+    expect(num(negocio.valor_total_liquido)).toBe(11229); // 11.400 − 171 (sem a comissão)
     expect(num(negocio.comissao)).toBe(228); // 2%
   });
 
@@ -224,31 +223,45 @@ describe('NegociosService.recalcular', () => {
     // a cabeça do outro lote não muda
     expect(num(gados[1].valor_total)).toBe(5400);
     expect(num(lotes[0].valor_total_lote)).toBe(6600);
-    expect(num(negocio.valor_total)).toBe(12000);
+    expect(num(negocio.valor_total_bruto)).toBe(12000);
     expect(num(negocio.funrural)).toBe(180);
+    expect(num(negocio.valor_total_liquido)).toBe(11820);
   });
 
-  it('o valor da unidade do negócio vale para as cabeças de todos os lotes', async () => {
-    const { servico, tx, negocio, gados } = bancoEmMemoria('arroba');
-    negocio.valor_unidade = dec(310);
+  it('cada lote usa o próprio preço: mudar o de um lote só muda as cabeças dele', async () => {
+    const { servico, tx, negocio, lotes, gados } = bancoEmMemoria('arroba');
+    lotes[0].valor_unidade = dec(310);
     await servico.recalcularGadosDoLote(tx, 10);
-    await servico.recalcularGadosDoLote(tx, 20);
     await servico.recalcular(tx, 1);
 
     expect(num(gados[0].valor_total)).toBe(6200); // 20 @ × 310
-    expect(num(gados[1].valor_total)).toBe(5580); // 18 @ × 310
-    expect(num(negocio.valor_total)).toBe(11780);
+    expect(num(gados[1].valor_total)).toBe(5400); // 18 @ × 300 (lote 20 não muda)
+    expect(num(lotes[0].valor_total_lote)).toBe(6200);
+    expect(num(negocio.valor_total_bruto)).toBe(11600);
   });
 
-  it('cabeca: valor do lote = valor por cabeça do negócio × quantidade', async () => {
+  it('líquido: Desconto em folha desconta o Senar; Livre é igual ao bruto', async () => {
+    const folha = bancoEmMemoria('arroba');
+    folha.negocio.tipo_negocio = 'Desconto em folha';
+    await folha.servico.recalcular(folha.tx, 1);
+    expect(num(folha.negocio.senar)).toBe(22.8); // 11.400 × 0,2%
+    expect(num(folha.negocio.valor_total_liquido)).toBe(11377.2);
+
+    const livre = bancoEmMemoria('arroba');
+    livre.negocio.tipo_negocio = 'Livre';
+    await livre.servico.recalcular(livre.tx, 1);
+    expect(num(livre.negocio.valor_total_liquido)).toBe(11400);
+  });
+
+  it('cabeca: valor do lote = valor por cabeça do lote × quantidade', async () => {
     const { servico, tx, negocio, lotes, gados } = bancoEmMemoria('cabeca');
     gados.length = 0;
     lotes.splice(1, 1);
     lotes[0].qtd_animais = 12;
-    negocio.valor_unidade = dec(2500);
+    lotes[0].valor_unidade = dec(2500);
     await servico.recalcular(tx, 1);
     expect(num(lotes[0].valor_total_lote)).toBe(30000);
-    expect(num(negocio.valor_total)).toBe(30000);
+    expect(num(negocio.valor_total_bruto)).toBe(30000);
   });
 
   it('mover a cabeça de lote recalcula os dois lotes', async () => {
@@ -290,7 +303,6 @@ describe('NegociosService.update — troca do tipo de gado', () => {
           negocio_id: 1,
           modalidade,
           tipo_gado: 'Gordo',
-          valor_unidade: dec(300),
           pecuarista_id: 3,
           fazenda_id: 2,
           comprador_pecuarista_id: null,
@@ -328,18 +340,6 @@ describe('NegociosService.update — troca do tipo de gado', () => {
   it('em arroba, não recalcula as cabeças', async () => {
     const { servico, recalcularGados } = servicoKg('arroba');
     await servico.update(1, { tipo_gado: 'Reposicao' });
-    expect(recalcularGados).not.toHaveBeenCalled();
-  });
-
-  it('mudar o valor da unidade recalcula as cabeças de todos os lotes', async () => {
-    const { servico, recalcularGados } = servicoKg('arroba');
-    await servico.update(1, { valor_unidade: 320 });
-    expect(recalcularGados.mock.calls.map((c) => c[1])).toEqual([10, 20]);
-  });
-
-  it('o mesmo valor da unidade não recalcula as cabeças', async () => {
-    const { servico, recalcularGados } = servicoKg('arroba');
-    await servico.update(1, { valor_unidade: 300 });
     expect(recalcularGados).not.toHaveBeenCalled();
   });
 

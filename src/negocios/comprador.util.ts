@@ -25,7 +25,8 @@ export type CompradorUnificado = {
   nome: string;
   documento: string;
   municipio: string | null;
-  pessoa_contato: string | null;
+  /** Do frigorífico; null para pecuarista comprador. */
+  inscricao_estadual: string | null;
 };
 
 type FrigorificoGravado = {
@@ -33,7 +34,7 @@ type FrigorificoGravado = {
   nome_empresa: string;
   cnpj: string;
   municipio: string;
-  pessoa_contato: string;
+  inscricao_estadual: string;
 };
 
 type PecuaristaGravado = {
@@ -50,7 +51,7 @@ export function frigorificoUnificado(c: FrigorificoGravado): CompradorUnificado 
     nome: c.nome_empresa,
     documento: c.cnpj,
     municipio: c.municipio,
-    pessoa_contato: c.pessoa_contato,
+    inscricao_estadual: c.inscricao_estadual,
   };
 }
 
@@ -62,7 +63,7 @@ export function pecuaristaUnificado(p: PecuaristaGravado): CompradorUnificado {
     documento: p.cpf_cnpj,
     // Município vazio no cadastro da fazenda conta como ausente.
     municipio: p.pecuarista_fazenda?.[0]?.fazenda.municipio || null,
-    pessoa_contato: null,
+    inscricao_estadual: null,
   };
 }
 

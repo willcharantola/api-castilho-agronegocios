@@ -39,6 +39,19 @@ export class CreateLoteDto {
   @IsIn(TIPOS_LOTE)
   tipo_lote: string;
 
+  @ApiProperty({
+    minimum: 0,
+    description:
+      'Preço por unidade deste lote: R$ por arroba, por kg ou por cabeça, conforme a ' +
+      'modalidade do negócio. Lotes do mesmo negócio podem ter preços diferentes.',
+  })
+  @IsNumber(
+    { maxDecimalPlaces: 2 },
+    { message: 'valor_unidade deve ser um número com até 2 casas decimais' },
+  )
+  @Min(0)
+  valor_unidade: number;
+
   @ApiProperty({ enum: GENEROS })
   @IsIn(GENEROS)
   genero: string;

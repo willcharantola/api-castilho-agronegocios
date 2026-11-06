@@ -1,6 +1,7 @@
 import { ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { ConfiguracoesController } from '../configuracoes/configuracoes.controller';
+import { EmpresasController } from '../empresas/empresas.controller';
 import { NegociosController } from '../negocios/negocios.controller';
 import { UsuariosController } from '../usuarios/usuarios.controller';
 import { RolesGuard } from './guards/roles.guard';
@@ -63,6 +64,34 @@ describe('@Roles — impostos e taxas', () => {
       true,
     );
   });
+});
+
+describe('@Roles — dados da empresa', () => {
+  it('GET é liberado para qualquer perfil', () => {
+    expect(permite(ConfiguracoesController, 'findDadosEmpresa', 'Normal')).toBe(
+      true,
+    );
+    expect(permite(ConfiguracoesController, 'findDadosEmpresa', 'Admin')).toBe(
+      true,
+    );
+  });
+
+  it('PATCH só para Admin', () => {
+    expect(
+      permite(ConfiguracoesController, 'updateDadosEmpresa', 'Normal'),
+    ).toBe(false);
+    expect(
+      permite(ConfiguracoesController, 'updateDadosEmpresa', 'Admin'),
+    ).toBe(true);
+  });
+
+  it.each(['create', 'update', 'remove'])(
+    '/empresas %s é recusada para Normal',
+    (rota) => {
+      expect(permite(EmpresasController, rota, 'Normal')).toBe(false);
+      expect(permite(EmpresasController, rota, 'Admin')).toBe(true);
+    },
+  );
 });
 
 describe('@Roles — negócios', () => {

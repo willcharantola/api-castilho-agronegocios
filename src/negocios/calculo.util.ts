@@ -24,7 +24,7 @@ export function arredondarCentavos(valor: number): number {
 }
 
 /**
- * Funrural e Senar (R$) conforme o tipo de negócio, a partir do valor_total e das
+ * Funrural e Senar (R$) conforme o tipo de negócio, a partir do valor_total_bruto e das
  * alíquotas (em %, 1.5 = 1,5%) gravadas no negócio. Nunca devolve null: o tipo que
  * zera o imposto (ou alíquota 0) resulta em 0.
  *
@@ -56,9 +56,25 @@ export function calcularImpostos(
 }
 
 /**
+ * Valor líquido do negócio: bruto menos os impostos devidos (Funrural e Senar já refletem o
+ * tipo de negócio). A comissão não entra. R$ com 2 casas, ROUND_HALF_UP.
+ */
+export function calcularValorLiquido(
+  bruto: number,
+  funrural: number,
+  senar: number,
+): number {
+  return new Prisma.Decimal(bruto)
+    .minus(funrural)
+    .minus(senar)
+    .toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP)
+    .toNumber();
+}
+
+/**
  * Como `porcentagem_comissao` é interpretado (ver calculo-comissao.md):
  * - "por_arroba": gado Gordo em "arroba" ou "kg" — R$ por arroba de peso vivo;
- * - "percentual": demais casos (Gordo por cabeça e Reposição) — % do valor_total.
+ * - "percentual": demais casos (Gordo por cabeça e Reposição) — % do valor bruto.
  */
 export type ModoComissao = 'por_arroba' | 'percentual';
 
@@ -109,7 +125,7 @@ export interface ValoresGado {
 }
 
 /**
- * Valores de um animal a partir do peso e dos dados do lote dele.
+ * Valores de um animal a partir do peso e dos dados do lote dele (rendimento e preço).
  * - arroba: peso_calculo = peso × rendimento / 100; valor = arrobas × valor_unidade
  * - kg:     peso_calculo = peso (sem rendimento);   valor = peso × valor_unidade;
  *           peso_arroba = peso ÷ 15 (Gordo) ou ÷ 30 (Reposição), só informativo
@@ -222,7 +238,7 @@ export interface AgregadosLote extends AgregadosPeso {
 /**
  * Agregados de um lote. Com pesagem (arroba/kg), quantidade e valor vêm dos gados do lote;
  * na modalidade "cabeca" não há gados: a quantidade é a informada e o valor é
- * valor_unidade (do negócio) × qtd_animais.
+ * valor_unidade (do lote) × qtd_animais.
  */
 export function calcularLote(
   modalidade: string,
@@ -255,7 +271,7 @@ export function calcularLote(
 
 export interface AgregadosNegocio extends AgregadosPeso {
   qtd_animais: number;
-  valor_total: number;
+  valor_total_bruto: number;
   valor_medio: number | null;
 }
 
@@ -275,7 +291,7 @@ export function calcularNegocio(
   return {
     ...agregarPesos(gados),
     qtd_animais: qtdAnimais,
-    valor_total: valorTotal,
+    valor_total_bruto: valorTotal,
     valor_medio:
       qtdAnimais > 0 ? arredondarCentavos(valorTotal / qtdAnimais) : null,
   };
