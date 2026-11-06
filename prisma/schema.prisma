@@ -53,6 +53,18 @@
 //   - fazenda: localizacao_google VARCHAR(500) e endereco_fazenda VARCHAR(200), opcionais.
 // CHECKs do lote (validados nos DTOs): tipo_lote, genero ("Macho" | "Femea") e
 // rendimento_carcaca entre 0 e 100.
+// 2026-11-06: bd-12 (script-banco-completo-criar-e-popular.sql, banco recriado do zero —
+// atualizacao-bd12.md):
+//   - negocio.valor_unidade (NOT NULL) volta para o negócio: um único preço para todos os
+//     lotes; lote.valor_unidade saiu.
+//   - lote.media_carimbo e lote.ano_carimbo opcionais.
+//   - comprador sem telefone; fazenda.cnpj opcional.
+//   - comprador do negócio: frigorífico (comprador_id) OU pecuarista
+//     (comprador_pecuarista_id → vendedor). CHECKs no banco: exatamente um preenchido
+//     (negocio_comprador_ck) e pecuarista comprador ≠ vendedor (negocio_comprador_diferente_ck).
+//   - tipos_gado (nova): catálogo de nomes sugeridos para lotes, por empresa, sem FK com lote.
+//     Índice único (empresa_id, lower(nome_gado)) — expressão que o Prisma não modela;
+//     a unicidade sem maiúsculas é checada em TiposGadoService.
 
 generator client {
   provider = "prisma-client-js"
@@ -64,18 +76,19 @@ datasource db {
 }
 
 model empresa {
-  empresa_id        Int       @id @default(autoincrement())
-  cnpj              String    @db.VarChar(18)
-  creci             String    @db.VarChar(20)
-  nome              String    @db.VarChar(50)
-  banco             String    @db.VarChar(20)
-  chave_pix         String    @db.VarChar(50)
-  agencia           String    @db.VarChar(4)
-  conta             String    @db.VarChar(10)
-  aliquota_funrural Decimal   @default(1.50) @db.Decimal(5, 2)
-  aliquota_senar    Decimal   @default(0.20) @db.Decimal(5, 2)
+  empresa_id        Int          @id @default(autoincrement())
+  cnpj              String       @db.VarChar(18)
+  creci             String       @db.VarChar(20)
+  nome              String       @db.VarChar(50)
+  banco             String       @db.VarChar(20)
+  chave_pix         String       @db.VarChar(50)
+  agencia           String       @db.VarChar(4)
+  conta             String       @db.VarChar(10)
+  aliquota_funrural Decimal      @default(1.50) @db.Decimal(5, 2)
+  aliquota_senar    Decimal      @default(0.20) @db.Decimal(5, 2)
   negocios          negocio[]
   usuarios          usuario[]
+  tipos_gado        tipos_gado[]
 
   @@map("empresa")
 }
@@ -97,6 +110,7 @@ model fazenda {
   fazenda_id         Int                  @id @default(autoincrement())
   nome_fazenda       String               @db.VarChar(50)
   municipio          String               @db.VarChar(20)
+  cnpj               String?              @db.VarChar(18)
   inscricao_estadual String               @db.VarChar(12)
   marca_url          String?              @db.VarChar(500)
   marca_escrita      String?              @db.VarChar(10)
@@ -119,51 +133,59 @@ model pecuarista {
   conta              String               @db.VarChar(20)
   chave_pix          String               @db.VarChar(50)
   uuid_origem        String?              @unique @db.Uuid
-  negocio            negocio[]
+  negocio            negocio[]            @relation("negocio_vendedor")
+  /// Negócios em que o pecuarista é o comprador.
+  compras            negocio[]            @relation("negocio_comprador_pecuarista")
   pecuarista_fazenda pecuarista_fazenda[]
 
   @@map("vendedor")
 }
 
 model negocio {
-  negocio_id           Int                @id @default(autoincrement())
-  empresa_id           Int
-  fazenda_id           Int
-  comprador_id         Int
-  pecuarista_id        Int                @map("vendedor_id")
-  hora_inicio_pesagem  DateTime?          @db.Time(6)
-  hora_fim_pesagem     DateTime?          @db.Time(6)
-  valor_total          Decimal            @db.Decimal(15, 2)
-  valor_medio          Decimal?           @db.Decimal(15, 2)
-  qtd_animais          Int
-  modalidade           String             @db.VarChar(6)
-  tipo_gado            String             @db.VarChar(9)
-  tipo_negocio         String             @db.VarChar(20)
-  mais_pesado_quilos   Decimal?           @db.Decimal(15, 2)
-  mais_leve_quilos     Decimal?           @db.Decimal(15, 2)
-  mais_pesado_arroba   Decimal?           @db.Decimal(15, 2)
-  mais_leve_arroba     Decimal?           @db.Decimal(15, 2)
-  data_negocio         DateTime           @db.Timestamp(6)
-  porcentagem_comissao Decimal?           @db.Decimal(5, 2)
-  comissao             Decimal?           @db.Decimal(15, 2)
-  observacao           String?            @db.VarChar(100)
-  peso_total_quilos    Decimal?           @db.Decimal(14, 4)
-  peso_total_arroba    Decimal?           @db.Decimal(14, 4)
-  rendimento_medio     Decimal?           @db.Decimal(8, 4)
-  peso_medio_arroba    Decimal?           @db.Decimal(14, 4)
-  peso_medio_quilos    Decimal?           @db.Decimal(14, 4)
-  funrural             Decimal?           @db.Decimal(15, 2)
-  senar                Decimal?           @db.Decimal(15, 2)
-  aliquota_funrural    Decimal?           @db.Decimal(5, 2)
-  aliquota_senar       Decimal?           @db.Decimal(5, 2)
-  uuid_origem          String?            @unique @db.Uuid
-  lotes                lote[]
-  comprador            comprador          @relation(fields: [comprador_id], references: [comprador_id], onDelete: NoAction, onUpdate: NoAction)
-  empresa              empresa            @relation(fields: [empresa_id], references: [empresa_id], onDelete: NoAction, onUpdate: NoAction)
-  fazenda              fazenda            @relation(fields: [fazenda_id], references: [fazenda_id], onDelete: NoAction, onUpdate: NoAction)
-  pecuarista           pecuarista         @relation(fields: [pecuarista_id], references: [pecuarista_id], onDelete: NoAction, onUpdate: NoAction)
+  negocio_id              Int                @id @default(autoincrement())
+  empresa_id              Int
+  fazenda_id              Int
+  /// Comprador frigorífico; exatamente um entre comprador_id e comprador_pecuarista_id.
+  comprador_id            Int?
+  /// Comprador pecuarista (tabela vendedor); nunca o próprio vendedor do negócio.
+  comprador_pecuarista_id Int?
+  pecuarista_id           Int                @map("vendedor_id")
+  hora_inicio_pesagem     DateTime?          @db.Time(6)
+  hora_fim_pesagem        DateTime?          @db.Time(6)
+  valor_total             Decimal            @db.Decimal(15, 2)
+  valor_medio             Decimal?           @db.Decimal(15, 2)
+  qtd_animais             Int
+  modalidade              String             @db.VarChar(6)
+  tipo_gado               String             @db.VarChar(9)
+  tipo_negocio            String             @db.VarChar(20)
+  /// Preço por unidade (R$/@, R$/kg ou R$/cabeça), o mesmo para todos os lotes.
+  valor_unidade           Decimal            @db.Decimal(15, 2)
+  mais_pesado_quilos      Decimal?           @db.Decimal(15, 2)
+  mais_leve_quilos        Decimal?           @db.Decimal(15, 2)
+  mais_pesado_arroba      Decimal?           @db.Decimal(15, 2)
+  mais_leve_arroba        Decimal?           @db.Decimal(15, 2)
+  data_negocio            DateTime           @db.Timestamp(6)
+  porcentagem_comissao    Decimal?           @db.Decimal(5, 2)
+  comissao                Decimal?           @db.Decimal(15, 2)
+  observacao              String?            @db.VarChar(100)
+  peso_total_quilos       Decimal?           @db.Decimal(14, 4)
+  peso_total_arroba       Decimal?           @db.Decimal(14, 4)
+  rendimento_medio        Decimal?           @db.Decimal(8, 4)
+  peso_medio_arroba       Decimal?           @db.Decimal(14, 4)
+  peso_medio_quilos       Decimal?           @db.Decimal(14, 4)
+  funrural                Decimal?           @db.Decimal(15, 2)
+  senar                   Decimal?           @db.Decimal(15, 2)
+  aliquota_funrural       Decimal?           @db.Decimal(5, 2)
+  aliquota_senar          Decimal?           @db.Decimal(5, 2)
+  uuid_origem             String?            @unique @db.Uuid
+  lotes                   lote[]
+  comprador               comprador?         @relation(fields: [comprador_id], references: [comprador_id], onDelete: NoAction, onUpdate: NoAction)
+  comprador_pecuarista    pecuarista?        @relation("negocio_comprador_pecuarista", fields: [comprador_pecuarista_id], references: [pecuarista_id], onDelete: NoAction, onUpdate: NoAction)
+  empresa                 empresa            @relation(fields: [empresa_id], references: [empresa_id], onDelete: NoAction, onUpdate: NoAction)
+  fazenda                 fazenda            @relation(fields: [fazenda_id], references: [fazenda_id], onDelete: NoAction, onUpdate: NoAction)
+  pecuarista              pecuarista         @relation("negocio_vendedor", fields: [pecuarista_id], references: [pecuarista_id], onDelete: NoAction, onUpdate: NoAction)
   // FK composta: a fazenda do negócio precisa estar vinculada ao pecuarista do negócio.
-  pecuarista_fazenda   pecuarista_fazenda @relation(fields: [pecuarista_id, fazenda_id], references: [pecuarista_id, fazenda_id], onDelete: NoAction, onUpdate: NoAction)
+  pecuarista_fazenda      pecuarista_fazenda @relation(fields: [pecuarista_id, fazenda_id], references: [pecuarista_id, fazenda_id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([empresa_id], map: "idx_negocio_empresa")
   @@index([data_negocio], map: "idx_negocio_data")
@@ -174,12 +196,11 @@ model lote {
   lote_id                 Int      @id @default(autoincrement())
   negocio_id              Int
   nome_lote               String   @db.VarChar(30)
-  valor_unidade           Decimal  @db.Decimal(15, 2)
   tipo_lote               String   @db.VarChar(8)
   genero                  String   @db.VarChar(6)
   rendimento_carcaca      Decimal  @db.Decimal(5, 2)
-  media_carimbo           String   @db.VarChar(30)
-  ano_carimbo             String   @db.VarChar(4)
+  media_carimbo           String?  @db.VarChar(30)
+  ano_carimbo             String?  @db.VarChar(4)
   qtd_animais             Int
   valor_total_lote        Decimal  @db.Decimal(15, 2)
   valor_medio_cabeca_lote Decimal? @db.Decimal(15, 2)
@@ -220,7 +241,6 @@ model comprador {
   comprador_id   Int       @id @default(autoincrement())
   nome_empresa   String    @db.VarChar(50)
   cnpj           String    @db.VarChar(18)
-  telefone       String    @db.VarChar(13)
   municipio      String    @db.VarChar(30)
   pessoa_contato String    @db.VarChar(30)
   uuid_origem    String?   @unique @db.Uuid
@@ -236,4 +256,16 @@ model pecuarista_fazenda {
 
   @@id([pecuarista_id, fazenda_id])
   @@map("vendedor_fazenda")
+}
+
+/// Nomes sugeridos para lotes (ex.: Nelore, Angus). O nome escolhido é copiado para
+/// lote.nome_lote: renomear ou excluir um tipo não altera lotes existentes.
+model tipos_gado {
+  tipo_gado_id Int     @id @default(autoincrement())
+  empresa_id   Int
+  nome_gado    String  @db.VarChar(30)
+  uuid_origem  String? @unique @db.Uuid
+  empresa      empresa @relation(fields: [empresa_id], references: [empresa_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@map("tipos_gado")
 }

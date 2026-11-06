@@ -7,10 +7,17 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Query,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiQuery,
+  ApiTags,
+} from '@nestjs/swagger';
 import { CompradoresService } from './compradores.service';
 import { CreateCompradorDto } from './dto/create-comprador.dto';
+import { OpcoesCompradorQueryDto } from './dto/opcoes-comprador-query.dto';
 import { UpdateCompradorDto } from './dto/update-comprador.dto';
 
 @ApiTags('compradores')
@@ -27,6 +34,25 @@ export class CompradoresController {
   @Get()
   findAll() {
     return this.compradoresService.findAll();
+  }
+
+  // Antes de ':id', senão "opcoes" seria lido como id.
+  @ApiOperation({
+    summary: 'Compradores possíveis de um negócio',
+    description:
+      'Frigoríficos e pecuaristas juntos, ordenados por nome, cada um com tipo, id, nome, ' +
+      'documento e município. `busca` filtra por nome ou documento (sem maiúsculas).',
+  })
+  @ApiQuery({ name: 'busca', required: false, type: String })
+  @ApiQuery({ name: 'limite', required: false, type: Number })
+  @ApiQuery({ name: 'pagina', required: false, type: Number })
+  @Get('opcoes')
+  opcoes(@Query() query: OpcoesCompradorQueryDto) {
+    return this.compradoresService.opcoes(
+      query.busca,
+      query.limite,
+      query.pagina,
+    );
   }
 
   @Get(':id')

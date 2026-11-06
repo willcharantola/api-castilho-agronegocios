@@ -23,6 +23,8 @@ import {
   type AgregadosLote,
   type GadoCalculado,
 } from './calculo.util';
+import { INCLUDE_COMPRADOR } from './comprador.util';
+import { CompradorDoNegocioDto } from './dto/comprador-do-negocio.dto';
 import { CreateNegocioDto } from './dto/create-negocio.dto';
 import { UpdateNegocioDto } from './dto/update-negocio.dto';
 
@@ -40,6 +42,7 @@ const SELECT_CALCULO = {
   modalidade: true,
   tipo_gado: true,
   tipo_negocio: true,
+  valor_unidade: true,
   porcentagem_comissao: true,
   ...SELECT_ALIQUOTAS,
 } as const;
@@ -54,6 +57,17 @@ const INCLUDE_LOTES = {
 
 export const MENSAGEM_FAZENDA_DE_OUTRO_PECUARISTA =
   'A fazenda não pertence ao pecuarista selecionado';
+
+export const MENSAGEM_COMPRADOR_E_VENDEDOR =
+  'O comprador não pode ser o próprio vendedor';
+
+export const MENSAGEM_COMPRADOR_NAO_ENCONTRADO = 'Comprador não encontrado';
+
+/** Colunas do comprador no negócio: exatamente uma preenchida (CHECK no banco). */
+type ColunasComprador = {
+  comprador_id: number | null;
+  comprador_pecuarista_id: number | null;
+};
 
 export const MENSAGEM_TROCA_PARA_CABECA =
   'Para mudar para "Por cabeça" o negócio precisa ter no máximo um lote e nenhuma cabeça pesada';
@@ -104,13 +118,21 @@ export class NegociosService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(dto: CreateNegocioDto) {
+    const { comprador, ...dados } = dto;
     await this.garantirVinculo(dto.pecuarista_id, dto.fazenda_id);
 
     const { registro } = await criarIdempotente(
       dto.uuid_origem,
       (uuid_origem) =>
-        this.prisma.negocio.findUnique({ where: { uuid_origem } }),
+        this.prisma.negocio.findUnique({
+          where: { uuid_origem },
+          include: INCLUDE_COMPRADOR,
+        }),
       async () => {
+        const colunas = await this.colunasDoComprador(
+          comprador,
+          dto.pecuarista_id,
+        );
         // Alíquotas vigentes na empresa no momento da criação: mudanças posteriores
         // na configuração não alteram os negócios já existentes. Gravadas mesmo quando o
         // tipo de negócio zera o imposto.
@@ -119,8 +141,10 @@ export class NegociosService {
           dto.empresa_id,
         );
         return this.prisma.negocio.create({
+          include: INCLUDE_COMPRADOR,
           data: {
-            ...dto,
+            ...dados,
+            ...colunas,
             ...aliquotas,
             data_negocio: new Date(dto.data_negocio),
             // Ainda não há lotes (valor_total = 0), então a comissão em R$ começa em 0
@@ -153,6 +177,7 @@ export class NegociosService {
     return this.prisma.negocio.findMany({
       where: filtroDeNegocios(fazendaId, dataInicio, dataFim),
       orderBy: { negocio_id: 'desc' },
+      include: INCLUDE_COMPRADOR,
     });
   }
 
@@ -191,7 +216,7 @@ export class NegociosService {
       where: { negocio_id: negocioId },
       include: {
         ...INCLUDE_LOTES,
-        comprador: true,
+        ...INCLUDE_COMPRADOR,
         pecuarista: true,
         fazenda: true,
       },
@@ -218,6 +243,7 @@ export class NegociosService {
   }
 
   async update(negocioId: number, dto: UpdateNegocioDto) {
+    const { comprador, ...dados } = dto;
     const atual = await this.findOne(negocioId);
     const modalidade = dto.modalidade ?? atual.modalidade;
     const trocouModalidade = modalidade !== atual.modalidade;
@@ -227,6 +253,13 @@ export class NegociosService {
       modoComissao(dto.tipo_gado ?? atual.tipo_gado, modalidade) !==
       modoComissao(atual.tipo_gado, atual.modalidade);
     const qtdGados = atual.lotes.reduce((soma, l) => soma + l.gados.length, 0);
+    // Em "kg", a arroba da cabeça depende do tipo de gado (÷ 15 ou ÷ 30, ver kgPorArroba).
+    const trocouTipoGado =
+      dto.tipo_gado !== undefined && dto.tipo_gado !== atual.tipo_gado;
+    // O preço é um só para todos os lotes: mudá-lo muda o valor de todas as cabeças.
+    const trocouValorUnidade =
+      dto.valor_unidade !== undefined &&
+      dto.valor_unidade !== atual.valor_unidade.toNumber();
 
     // "cabeca" tem um único lote e nenhuma pesagem individual.
     if (
@@ -245,13 +278,21 @@ export class NegociosService {
     ) {
       await this.garantirVinculo(pecuaristaId, fazendaId);
     }
+    // Novo comprador; sem ele, o pecuarista comprador atual não pode virar o vendedor.
+    let colunas: Partial<ColunasComprador> = {};
+    if (comprador) {
+      colunas = await this.colunasDoComprador(comprador, pecuaristaId);
+    } else if (atual.comprador_pecuarista_id === pecuaristaId) {
+      throw new BadRequestException(MENSAGEM_COMPRADOR_E_VENDEDOR);
+    }
 
     try {
       await this.prisma.$transaction(async (tx) => {
         await tx.negocio.update({
           where: { negocio_id: negocioId },
           data: {
-            ...dto,
+            ...dados,
+            ...colunas,
             ...(dto.data_negocio
               ? { data_negocio: new Date(dto.data_negocio) }
               : {}),
@@ -262,6 +303,13 @@ export class NegociosService {
         });
         if (trocouModalidade) {
           await this.ajustarLotesAModalidade(tx, negocioId, modalidade);
+        } else if (
+          trocouValorUnidade ||
+          (trocouTipoGado && modalidade === 'kg')
+        ) {
+          for (const { lote_id } of atual.lotes) {
+            await this.recalcularGadosDoLote(tx, lote_id);
+          }
         }
         // valor_total, comissão, Funrural e Senar (dependem do tipo_negocio e do valor).
         await this.recalcular(tx, negocioId);
@@ -271,6 +319,7 @@ export class NegociosService {
     }
     return this.prisma.negocio.findUniqueOrThrow({
       where: { negocio_id: negocioId },
+      include: INCLUDE_COMPRADOR,
     });
   }
 
@@ -284,6 +333,7 @@ export class NegociosService {
     try {
       return await this.prisma.negocio.update({
         where: { negocio_id: negocioId },
+        include: INCLUDE_COMPRADOR,
         data: {
           hora_fim_pesagem: horaFim ? horaParaDate(horaFim) : horaAtual(fuso),
         },
@@ -324,12 +374,17 @@ export class NegociosService {
 
   /**
    * Recalcula peso_calculo, peso_arroba e valor_total de todas as cabeças do lote, a partir
-   * do rendimento e do valor da unidade do lote e da modalidade do negócio.
+   * do rendimento do lote e da modalidade, do tipo de gado e do valor da unidade do negócio.
    */
   async recalcularGadosDoLote(tx: Prisma.TransactionClient, loteId: number) {
     const lote = await tx.lote.findUniqueOrThrow({
       where: { lote_id: loteId },
-      include: { negocio: { select: { modalidade: true } }, gados: true },
+      include: {
+        negocio: {
+          select: { modalidade: true, tipo_gado: true, valor_unidade: true },
+        },
+        gados: true,
+      },
     });
     if (lote.negocio.modalidade === 'cabeca') return;
     for (const gado of lote.gados) {
@@ -339,7 +394,8 @@ export class NegociosService {
           lote.negocio.modalidade,
           gado.peso_total.toNumber(),
           lote.rendimento_carcaca.toNumber(),
-          lote.valor_unidade.toNumber(),
+          lote.negocio.valor_unidade.toNumber(),
+          lote.negocio.tipo_gado,
         ),
       });
     }
@@ -370,7 +426,7 @@ export class NegociosService {
       const agregados = calcularLote(
         negocio.modalidade,
         {
-          valor_unidade: lote.valor_unidade.toNumber(),
+          valor_unidade: negocio.valor_unidade.toNumber(),
           qtd_animais: lote.qtd_animais,
         },
         gados,
@@ -443,6 +499,38 @@ export class NegociosService {
     for (const { lote_id } of lotes) {
       await this.recalcularGadosDoLote(tx, lote_id);
     }
+  }
+
+  /**
+   * Comprador escolhido → colunas do negócio. O banco recusaria (CHECK/FK) um comprador
+   * inexistente ou o próprio vendedor; a checagem aqui devolve 400 com mensagem clara.
+   * Frigorífico e pecuarista não têm empresa no banco: basta existirem.
+   */
+  private async colunasDoComprador(
+    comprador: CompradorDoNegocioDto,
+    vendedorId: number,
+  ): Promise<ColunasComprador> {
+    if (comprador.tipo === 'frigorifico') {
+      const existe = await this.prisma.comprador.findUnique({
+        where: { comprador_id: comprador.id },
+        select: { comprador_id: true },
+      });
+      if (!existe) {
+        throw new BadRequestException(MENSAGEM_COMPRADOR_NAO_ENCONTRADO);
+      }
+      return { comprador_id: comprador.id, comprador_pecuarista_id: null };
+    }
+    if (comprador.id === vendedorId) {
+      throw new BadRequestException(MENSAGEM_COMPRADOR_E_VENDEDOR);
+    }
+    const existe = await this.prisma.pecuarista.findUnique({
+      where: { pecuarista_id: comprador.id },
+      select: { pecuarista_id: true },
+    });
+    if (!existe) {
+      throw new BadRequestException(MENSAGEM_COMPRADOR_NAO_ENCONTRADO);
+    }
+    return { comprador_id: null, comprador_pecuarista_id: comprador.id };
   }
 
   /**

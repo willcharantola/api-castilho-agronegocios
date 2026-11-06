@@ -6,12 +6,17 @@ import { GadosService, MENSAGEM_LOTE_DE_OUTRO_NEGOCIO } from './gados.service';
 
 const dec = (valor: number) => new Prisma.Decimal(valor);
 
-const lote = (loteId: number, negocioId: number, rendimento: number, modalidade = 'arroba') => ({
+const lote = (
+  loteId: number,
+  negocioId: number,
+  rendimento: number,
+  modalidade = 'arroba',
+  tipoGado = 'Gordo',
+) => ({
   lote_id: loteId,
   negocio_id: negocioId,
   rendimento_carcaca: dec(rendimento),
-  valor_unidade: dec(300),
-  negocio: { empresa_id: 1, modalidade },
+  negocio: { empresa_id: 1, modalidade, tipo_gado: tipoGado, valor_unidade: dec(300) },
 });
 
 function criarServico(lotes: ReturnType<typeof lote>[]) {
@@ -61,6 +66,15 @@ describe('GadosService.create', () => {
     expect(negocios.recalcular).toHaveBeenCalledWith(tx, 1);
   });
 
+  it('kg + Reposição: arroba = peso ÷ 30', async () => {
+    const { tx, servico } = criarServico([lote(10, 1, 100, 'kg', 'Reposicao')]);
+    await servico.create({ lote_id: 10, peso_total: 600 }, 1);
+    expect(tx.gado.create.mock.calls[0][0].data).toMatchObject({
+      peso_calculo: 600,
+      peso_arroba: 20,
+    });
+  });
+
   it('lote de negócio "cabeca" → 400', async () => {
     const { servico } = criarServico([lote(10, 1, 100, 'cabeca')]);
     await expect(
@@ -69,7 +83,8 @@ describe('GadosService.create', () => {
   });
 
   it('lote de outra empresa → 404', async () => {
-    const outro = { ...lote(10, 1, 50), negocio: { empresa_id: 2, modalidade: 'arroba' } };
+    const outro = { ...lote(10, 1, 50), negocio: { empresa_id: 2, modalidade: 'arroba', tipo_gado: 'Gordo', valor_unidade: dec(300) },
+    };
     const { servico } = criarServico([outro]);
     await expect(
       servico.create({ lote_id: 10, peso_total: 600 }, 1),

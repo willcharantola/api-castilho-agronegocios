@@ -8,6 +8,14 @@ import { type TipoNegocio } from '../common/dominio';
 
 const KG_POR_ARROBA = 15;
 
+/**
+ * Quilos por arroba no cálculo da cabeça: 30 para gado de Reposição na modalidade "kg"
+ * (arroba de peso vivo do gado magro); 15 em todos os demais casos.
+ */
+export function kgPorArroba(modalidade: string, tipoGado: string): number {
+  return modalidade === 'kg' && tipoGado === 'Reposicao' ? 30 : KG_POR_ARROBA;
+}
+
 /** R$ com 2 casas, ROUND_HALF_UP (Decimal evita o erro de ponto flutuante: 1,005 → 1,01). */
 export function arredondarCentavos(valor: number): number {
   return new Prisma.Decimal(valor)
@@ -103,7 +111,8 @@ export interface ValoresGado {
 /**
  * Valores de um animal a partir do peso e dos dados do lote dele.
  * - arroba: peso_calculo = peso × rendimento / 100; valor = arrobas × valor_unidade
- * - kg:     peso_calculo = peso (sem rendimento);   valor = peso × valor_unidade
+ * - kg:     peso_calculo = peso (sem rendimento);   valor = peso × valor_unidade;
+ *           peso_arroba = peso ÷ 15 (Gordo) ou ÷ 30 (Reposição), só informativo
  * "cabeca" não tem registros individuais de gado.
  */
 export function calcularGado(
@@ -111,6 +120,7 @@ export function calcularGado(
   pesoTotal: number,
   rendimento: number,
   valorUnidade: number,
+  tipoGado: string,
 ): ValoresGado {
   switch (modalidade) {
     case 'arroba': {
@@ -125,7 +135,7 @@ export function calcularGado(
     case 'kg':
       return {
         peso_calculo: pesoTotal,
-        peso_arroba: pesoTotal / KG_POR_ARROBA,
+        peso_arroba: pesoTotal / kgPorArroba(modalidade, tipoGado),
         valor_total: arredondarCentavos(pesoTotal * valorUnidade),
       };
     default:
@@ -212,7 +222,7 @@ export interface AgregadosLote extends AgregadosPeso {
 /**
  * Agregados de um lote. Com pesagem (arroba/kg), quantidade e valor vêm dos gados do lote;
  * na modalidade "cabeca" não há gados: a quantidade é a informada e o valor é
- * valor_unidade × qtd_animais.
+ * valor_unidade (do negócio) × qtd_animais.
  */
 export function calcularLote(
   modalidade: string,

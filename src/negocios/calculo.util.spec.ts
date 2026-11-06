@@ -8,6 +8,7 @@ import {
   calcularRendimentoMedio,
   calcularComissao,
   comModoComissao,
+  kgPorArroba,
   modoComissao,
   type GadoCalculado,
 } from './calculo.util';
@@ -20,7 +21,7 @@ const gado = (
   valorUnidade: number,
 ): GadoCalculado => ({
   peso_total: peso,
-  ...calcularGado(modalidade, peso, rendimento, valorUnidade),
+  ...calcularGado(modalidade, peso, rendimento, valorUnidade, 'Gordo'),
 });
 
 describe('calcularImpostos', () => {
@@ -91,7 +92,7 @@ describe('arredondarCentavos', () => {
 describe('calcularGado', () => {
   it('arroba: peso × rendimento do lote / 15 × valor da arroba', () => {
     // 500 kg × 52,5% = 262,5 kg → 17,5 @ × R$ 300 = R$ 5.250,00
-    expect(calcularGado('arroba', 500, 52.5, 300)).toEqual({
+    expect(calcularGado('arroba', 500, 52.5, 300, 'Gordo')).toEqual({
       peso_calculo: 262.5,
       peso_arroba: 17.5,
       valor_total: 5250,
@@ -100,22 +101,49 @@ describe('calcularGado', () => {
 
   it('arroba: arrobas sem arredondar; valor arredondado só no fim', () => {
     // 431 × 53,25% = 229,5075 kg → 15,3005 @ × 287,5 = 4.398,89375
-    const v = calcularGado('arroba', 431, 53.25, 287.5);
+    const v = calcularGado('arroba', 431, 53.25, 287.5, 'Gordo');
     expect(v.peso_calculo).toBeCloseTo(229.5075, 10);
     expect(v.peso_arroba).toBeCloseTo(15.3005, 10);
     expect(v.valor_total).toBe(4398.89);
   });
 
   it('kg: peso_calculo = peso_total (ignora rendimento) e valor por quilo', () => {
-    expect(calcularGado('kg', 420, 52, 10.5)).toEqual({
+    expect(calcularGado('kg', 420, 52, 10.5, 'Gordo')).toEqual({
       peso_calculo: 420,
       peso_arroba: 28,
       valor_total: 4410,
     });
   });
 
+  it('kg + Reposição: arroba = peso ÷ 30; o valor continua por quilo', () => {
+    expect(calcularGado('kg', 420, 52, 10.5, 'Reposicao')).toEqual({
+      peso_calculo: 420,
+      peso_arroba: 14,
+      valor_total: 4410,
+    });
+  });
+
+  it('arroba + Reposição continua ÷ 15 sobre o peso com rendimento', () => {
+    expect(calcularGado('arroba', 500, 52.5, 300, 'Reposicao')).toEqual({
+      peso_calculo: 262.5,
+      peso_arroba: 17.5,
+      valor_total: 5250,
+    });
+  });
+
   it('cabeca não tem cálculo por animal', () => {
-    expect(() => calcularGado('cabeca', 1, 100, 1)).toThrow();
+    expect(() => calcularGado('cabeca', 1, 100, 1, 'Gordo')).toThrow();
+  });
+});
+
+describe('kgPorArroba', () => {
+  it.each([
+    ['kg', 'Reposicao', 30],
+    ['kg', 'Gordo', 15],
+    ['arroba', 'Reposicao', 15],
+    ['arroba', 'Gordo', 15],
+  ])('%s + %s → %i', (modalidade, tipoGado, esperado) => {
+    expect(kgPorArroba(modalidade, tipoGado)).toBe(esperado);
   });
 });
 

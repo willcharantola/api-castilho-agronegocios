@@ -17,6 +17,7 @@ import { NegociosModule } from './negocios/negocios.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { UsuariosModule } from './usuarios/usuarios.module';
 import { PecuaristasModule } from './pecuaristas/pecuaristas.module';
+import { TiposGadoModule } from './tipos-gado/tipos-gado.module';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { PecuaristasModule } from './pecuaristas/pecuaristas.module';
     GadosModule,
     UploadsModule,
     ConfiguracoesModule,
+    TiposGadoModule,
   ],
   controllers: [AppController],
   providers: [

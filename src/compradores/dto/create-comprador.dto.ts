@@ -6,6 +6,7 @@ import {
   IsUUID,
   MaxLength,
 } from 'class-validator';
+import { Cnpj } from '../../common/documentos.util';
 
 export class CreateCompradorDto {
   @ApiProperty({ maxLength: 50 })
@@ -14,17 +15,16 @@ export class CreateCompradorDto {
   @MaxLength(50)
   nome_empresa: string;
 
-  @ApiProperty({ maxLength: 18 })
+  @ApiProperty({
+    maxLength: 18,
+    example: '11.222.333/0001-81',
+    description: 'CNPJ válido; aceita sem pontuação e é gravado formatado.',
+  })
   @IsString()
   @IsNotEmpty()
+  @Cnpj()
   @MaxLength(18)
   cnpj: string;
-
-  @ApiProperty({ maxLength: 13 })
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(13)
-  telefone: string;
 
   @ApiProperty({ maxLength: 30 })
   @IsString()

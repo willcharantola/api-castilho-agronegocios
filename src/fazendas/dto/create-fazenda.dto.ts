@@ -6,6 +6,10 @@ import {
   IsUUID,
   MaxLength,
 } from 'class-validator';
+import {
+  CnpjOpcional,
+  InscricaoEstadual,
+} from '../../common/documentos.util';
 import { IsLocalizacaoGoogle } from '../../common/localizacao.util';
 
 export class CreateFazendaDto {
@@ -21,11 +25,29 @@ export class CreateFazendaDto {
   @MaxLength(20)
   municipio: string;
 
-  @ApiProperty({ maxLength: 12 })
+  @ApiProperty({
+    maxLength: 12,
+    example: '28.766.688-3',
+    description: 'Inscrição estadual (MS), 00.000.000-0; aceita também só os 9 dígitos.',
+  })
   @IsString()
   @IsNotEmpty()
+  @InscricaoEstadual()
   @MaxLength(12)
   inscricao_estadual: string;
+
+  @ApiPropertyOptional({
+    maxLength: 18,
+    nullable: true,
+    example: '12.345.678/0001-90',
+    description:
+      'CNPJ próprio da fazenda, opcional. Aceita com ou sem pontuação (grava no formato ' +
+      '00.000.000/0000-00); dígitos verificadores inválidos → 400. Vazio ou null limpa.',
+  })
+  @IsOptional()
+  @CnpjOpcional()
+  @MaxLength(18)
+  cnpj?: string | null;
 
   @ApiPropertyOptional({
     maxLength: 500,

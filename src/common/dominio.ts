@@ -21,6 +21,10 @@ export type TipoLote = (typeof TIPOS_LOTE)[number];
 export const GENEROS = ['Macho', 'Femea'] as const;
 export type Genero = (typeof GENEROS)[number];
 
+/** Origem do comprador do negócio: frigorífico (tabela comprador) ou pecuarista (vendedor). */
+export const TIPOS_COMPRADOR = ['frigorifico', 'pecuarista'] as const;
+export type TipoComprador = (typeof TIPOS_COMPRADOR)[number];
+
 export const TIPOS_NEGOCIO = ['Desconto em folha', 'Livre', 'Funrural'] as const;
 export type TipoNegocio = (typeof TIPOS_NEGOCIO)[number];
 

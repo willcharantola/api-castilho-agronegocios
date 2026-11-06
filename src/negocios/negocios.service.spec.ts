@@ -3,6 +3,8 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateNegocioDto } from './dto/create-negocio.dto';
 import {
+  MENSAGEM_COMPRADOR_E_VENDEDOR,
+  MENSAGEM_COMPRADOR_NAO_ENCONTRADO,
   MENSAGEM_FAZENDA_DE_OUTRO_PECUARISTA,
   MENSAGEM_TROCA_PARA_CABECA,
   NegociosService,
@@ -12,8 +14,9 @@ const DTO = {
   empresa_id: 1,
   fazenda_id: 2,
   pecuarista_id: 3,
-  comprador_id: 4,
+  comprador: { tipo: 'frigorifico', id: 4 },
   modalidade: 'arroba',
+  valor_unidade: 300,
   tipo_gado: 'Gordo',
   tipo_negocio: 'Funrural',
   data_negocio: '2026-10-26T00:00:00.000Z',
@@ -21,8 +24,17 @@ const DTO = {
 
 const dec = (valor: number) => new Prisma.Decimal(valor);
 
-function criarServico(vinculoExiste: boolean) {
+function criarServico(
+  vinculoExiste: boolean,
+  { compradorExiste = true }: { compradorExiste?: boolean } = {},
+) {
   const prisma = {
+    comprador: {
+      findUnique: jest.fn().mockResolvedValue(compradorExiste ? {} : null),
+    },
+    pecuarista: {
+      findUnique: jest.fn().mockResolvedValue(compradorExiste ? {} : null),
+    },
     pecuarista_fazenda: {
       findUnique: jest.fn().mockResolvedValue(vinculoExiste ? {} : null),
     },
@@ -62,7 +74,40 @@ describe('NegociosService.create', () => {
       senar: 0,
       valor_total: 0,
       qtd_animais: 0,
+      valor_unidade: 300,
     });
+  });
+
+  it('frigorífico como comprador grava só comprador_id', async () => {
+    const { prisma, servico } = criarServico(true);
+    await servico.create(DTO);
+    const data = prisma.negocio.create.mock.calls[0][0].data;
+    expect(data).toMatchObject({ comprador_id: 4, comprador_pecuarista_id: null });
+    expect(data).not.toHaveProperty('comprador');
+  });
+
+  it('pecuarista como comprador grava só comprador_pecuarista_id', async () => {
+    const { prisma, servico } = criarServico(true);
+    await servico.create({ ...DTO, comprador: { tipo: 'pecuarista', id: 8 } });
+    expect(prisma.negocio.create.mock.calls[0][0].data).toMatchObject({
+      comprador_id: null,
+      comprador_pecuarista_id: 8,
+    });
+  });
+
+  it('o próprio vendedor como comprador → 400, sem gravar', async () => {
+    const { prisma, servico } = criarServico(true);
+    await expect(
+      servico.create({ ...DTO, comprador: { tipo: 'pecuarista', id: 3 } }),
+    ).rejects.toThrow(MENSAGEM_COMPRADOR_E_VENDEDOR);
+    expect(prisma.negocio.create).not.toHaveBeenCalled();
+  });
+
+  it('comprador inexistente → 400', async () => {
+    const { servico } = criarServico(true, { compradorExiste: false });
+    await expect(servico.create(DTO)).rejects.toThrow(
+      MENSAGEM_COMPRADOR_NAO_ENCONTRADO,
+    );
   });
 });
 
@@ -96,13 +141,14 @@ function bancoEmMemoria(modalidade: string, tipoGado = 'Reposicao') {
     modalidade,
     tipo_gado: tipoGado,
     tipo_negocio: 'Funrural',
+    valor_unidade: dec(300),
     porcentagem_comissao: dec(2),
     aliquota_funrural: dec(1.5),
     aliquota_senar: dec(0.2),
   };
   const lotes: Record<string, any>[] = [
-    { lote_id: 10, negocio_id: 1, rendimento_carcaca: dec(50), valor_unidade: dec(300), qtd_animais: 0 },
-    { lote_id: 20, negocio_id: 1, rendimento_carcaca: dec(60), valor_unidade: dec(300), qtd_animais: 0 },
+    { lote_id: 10, negocio_id: 1, rendimento_carcaca: dec(50), qtd_animais: 0 },
+    { lote_id: 20, negocio_id: 1, rendimento_carcaca: dec(60), qtd_animais: 0 },
   ];
   const gados: GadoMem[] = [
     // lote 10: 600 kg × 50% = 300 kg → 20 @ × 300 = 6.000,00
@@ -122,7 +168,11 @@ function bancoEmMemoria(modalidade: string, tipoGado = 'Reposicao') {
       findMany: jest.fn(async () => lotes.map((l) => ({ ...l, gados: doLote(l.lote_id) }))),
       findUniqueOrThrow: jest.fn(async ({ where }) => {
         const lote = lotes.find((l) => l.lote_id === where.lote_id)!;
-        return { ...lote, negocio: { modalidade: negocio.modalidade }, gados: doLote(lote.lote_id) };
+        return { ...lote, negocio: {
+            modalidade: negocio.modalidade,
+            tipo_gado: negocio.tipo_gado,
+            valor_unidade: negocio.valor_unidade,
+          }, gados: doLote(lote.lote_id) };
       }),
       update: jest.fn(async ({ where, data }) =>
         Object.assign(lotes.find((l) => l.lote_id === where.lote_id)!, comDecimais(data)),
@@ -178,14 +228,27 @@ describe('NegociosService.recalcular', () => {
     expect(num(negocio.funrural)).toBe(180);
   });
 
-  it('editar o valor da unidade do lote recalcula o valor das cabeças', async () => {
-    const { servico, tx, negocio, lotes, gados } = bancoEmMemoria('arroba');
-    lotes[1].valor_unidade = dec(310);
+  it('o valor da unidade do negócio vale para as cabeças de todos os lotes', async () => {
+    const { servico, tx, negocio, gados } = bancoEmMemoria('arroba');
+    negocio.valor_unidade = dec(310);
+    await servico.recalcularGadosDoLote(tx, 10);
     await servico.recalcularGadosDoLote(tx, 20);
     await servico.recalcular(tx, 1);
 
+    expect(num(gados[0].valor_total)).toBe(6200); // 20 @ × 310
     expect(num(gados[1].valor_total)).toBe(5580); // 18 @ × 310
-    expect(num(negocio.valor_total)).toBe(11580);
+    expect(num(negocio.valor_total)).toBe(11780);
+  });
+
+  it('cabeca: valor do lote = valor por cabeça do negócio × quantidade', async () => {
+    const { servico, tx, negocio, lotes, gados } = bancoEmMemoria('cabeca');
+    gados.length = 0;
+    lotes.splice(1, 1);
+    lotes[0].qtd_animais = 12;
+    negocio.valor_unidade = dec(2500);
+    await servico.recalcular(tx, 1);
+    expect(num(lotes[0].valor_total_lote)).toBe(30000);
+    expect(num(negocio.valor_total)).toBe(30000);
   });
 
   it('mover a cabeça de lote recalcula os dois lotes', async () => {
@@ -198,6 +261,102 @@ describe('NegociosService.recalcular', () => {
     expect(lotes[1].qtd_animais).toBe(0);
     expect(num(lotes[1].valor_total_lote)).toBe(0);
     expect(lotes[1].valor_medio_cabeca_lote).toBeNull();
+  });
+});
+
+describe('NegociosService — arroba na modalidade kg', () => {
+  it('Reposição em kg: arroba das cabeças = peso ÷ 30', async () => {
+    const { servico, tx, negocio, gados } = bancoEmMemoria('kg', 'Reposicao');
+    await servico.recalcularGadosDoLote(tx, 10);
+    await servico.recalcularGadosDoLote(tx, 20);
+    await servico.recalcular(tx, 1);
+    expect(num(gados[0].peso_arroba)).toBe(20); // 600 ÷ 30
+    expect(num(gados[1].peso_arroba)).toBe(15); // 450 ÷ 30
+    expect(num(negocio.peso_total_arroba)).toBe(35);
+  });
+
+  it('Gordo em kg: arroba das cabeças = peso ÷ 15', async () => {
+    const { servico, tx, gados } = bancoEmMemoria('kg', 'Gordo');
+    await servico.recalcularGadosDoLote(tx, 10);
+    expect(num(gados[0].peso_arroba)).toBe(40); // 600 ÷ 15
+  });
+});
+
+describe('NegociosService.update — troca do tipo de gado', () => {
+  function servicoKg(modalidade: string, extras: Record<string, unknown> = {}) {
+    const prisma = {
+      negocio: {
+        findUnique: jest.fn().mockResolvedValue({
+          negocio_id: 1,
+          modalidade,
+          tipo_gado: 'Gordo',
+          valor_unidade: dec(300),
+          pecuarista_id: 3,
+          fazenda_id: 2,
+          comprador_pecuarista_id: null,
+          lotes: [
+            { lote_id: 10, gados: [] },
+            { lote_id: 20, gados: [] },
+          ],
+          ...extras,
+        }),
+        findUniqueOrThrow: jest.fn().mockResolvedValue({}),
+      },
+      pecuarista: { findUnique: jest.fn().mockResolvedValue({}) },
+      pecuarista_fazenda: { findUnique: jest.fn().mockResolvedValue({}) },
+      $transaction: jest.fn((fn: (tx: unknown) => unknown) =>
+        fn({ negocio: { update: atualizar } }),
+      ),
+    };
+    const atualizar = jest.fn();
+    const servico = new NegociosService(prisma as unknown as PrismaService);
+    jest.spyOn(servico, 'recalcular').mockResolvedValue();
+    const recalcularGados = jest
+      .spyOn(servico, 'recalcularGadosDoLote')
+      .mockResolvedValue();
+    const gravado = () =>
+      (atualizar.mock.calls[0][0] as { data: Record<string, unknown> }).data;
+    return { servico, recalcularGados, gravado };
+  }
+
+  it('em kg, recalcula as cabeças de todos os lotes', async () => {
+    const { servico, recalcularGados } = servicoKg('kg');
+    await servico.update(1, { tipo_gado: 'Reposicao' });
+    expect(recalcularGados.mock.calls.map((c) => c[1])).toEqual([10, 20]);
+  });
+
+  it('em arroba, não recalcula as cabeças', async () => {
+    const { servico, recalcularGados } = servicoKg('arroba');
+    await servico.update(1, { tipo_gado: 'Reposicao' });
+    expect(recalcularGados).not.toHaveBeenCalled();
+  });
+
+  it('mudar o valor da unidade recalcula as cabeças de todos os lotes', async () => {
+    const { servico, recalcularGados } = servicoKg('arroba');
+    await servico.update(1, { valor_unidade: 320 });
+    expect(recalcularGados.mock.calls.map((c) => c[1])).toEqual([10, 20]);
+  });
+
+  it('o mesmo valor da unidade não recalcula as cabeças', async () => {
+    const { servico, recalcularGados } = servicoKg('arroba');
+    await servico.update(1, { valor_unidade: 300 });
+    expect(recalcularGados).not.toHaveBeenCalled();
+  });
+
+  it('trocar para pecuarista comprador zera a coluna do frigorífico', async () => {
+    const { servico, gravado } = servicoKg('arroba');
+    await servico.update(1, { comprador: { tipo: 'pecuarista', id: 8 } });
+    expect(gravado()).toMatchObject({
+      comprador_id: null,
+      comprador_pecuarista_id: 8,
+    });
+  });
+
+  it('o pecuarista comprador não pode virar o vendedor', async () => {
+    const { servico } = servicoKg('arroba', { comprador_pecuarista_id: 5 });
+    await expect(servico.update(1, { pecuarista_id: 5 })).rejects.toThrow(
+      MENSAGEM_COMPRADOR_E_VENDEDOR,
+    );
   });
 });
 

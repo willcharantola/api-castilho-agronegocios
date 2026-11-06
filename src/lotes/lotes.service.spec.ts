@@ -64,7 +64,6 @@ const loteGravado = (modalidade: string, gados: unknown[] = []) => ({
   negocio_id: 1,
   nome_lote: 'Bois Nelore',
   rendimento_carcaca: dec(53.5),
-  valor_unidade: dec(310),
   qtd_animais: gados.length,
   gados,
   negocio: { empresa_id: 1, modalidade },
@@ -145,14 +144,6 @@ describe('LotesService.update', () => {
     expect(negocios.recalcular).toHaveBeenCalledWith(tx, 1);
   });
 
-  it('mudar o valor da unidade também recalcula as cabeças', async () => {
-    const { negocios, servico } = criarServico('arroba', {
-      loteAtual: loteGravado('arroba'),
-    });
-    await servico.update(7, { valor_unidade: 320 }, 1);
-    expect(negocios.recalcularGadosDoLote).toHaveBeenCalled();
-  });
-
   it('mudar só o carimbo não recalcula as cabeças', async () => {
     const { negocios, servico } = criarServico('arroba', {
       loteAtual: loteGravado('arroba'),
@@ -166,7 +157,7 @@ describe('LotesService.update', () => {
     const { servico } = criarServico('arroba', {
       loteAtual: { ...loteGravado('arroba'), negocio: { empresa_id: 2, modalidade: 'arroba' } },
     });
-    await expect(servico.update(7, { valor_unidade: 1 }, 1)).rejects.toThrow(
+    await expect(servico.update(7, { rendimento_carcaca: 50 }, 1)).rejects.toThrow(
       'Lote 7 não encontrado',
     );
   });

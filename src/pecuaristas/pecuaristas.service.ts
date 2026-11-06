@@ -96,7 +96,13 @@ export class PecuaristasService {
     await this.findOne(pecuaristaId);
     await impedirExclusaoComNegocios(
       this.prisma,
-      { pecuarista_id: pecuaristaId },
+      // Como vendedor ou como comprador.
+      {
+        OR: [
+          { pecuarista_id: pecuaristaId },
+          { comprador_pecuarista_id: pecuaristaId },
+        ],
+      },
       'este pecuarista',
     );
     try {
