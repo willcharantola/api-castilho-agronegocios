@@ -130,8 +130,8 @@ Base URL: `NEXT_PUBLIC_API_URL`. Todos exigem JWT exceto os marcados como **púb
 | Negócios | `GET/POST /negocios`, `GET /negocios/resumo`, `GET/PATCH /negocios/:id`, `PATCH /negocios/:id/concluir`, `DELETE /negocios/:id` | `DELETE` **exige `Admin`** (lotes e gados saem junto). `GET /negocios/:id` inclui os `lotes`, cada um com seus `gados`. `GET /negocios` e `GET /negocios/resumo` aceitam `?fazenda_id=&data_inicio=&data_fim=`. Comissão restrita a Admin (ver "Permissões por perfil") |
 | Lotes | `GET/POST /negocios/:negocioId/lotes`, `GET/PATCH/DELETE /lotes/:id` | `DELETE` responde `409` se o lote tiver cabeças |
 | Gados | `GET/POST /gados`, `GET/PATCH/DELETE /gados/:id` | Cada gado pertence a um `lote_id` (e ao negócio pelo lote) |
-| Configurações | `GET /configuracoes/impostos`, `PATCH /configuracoes/impostos` | Alíquotas da empresa do usuário logado. `PATCH` **exige `Admin`** |
-| Compradores (frigoríficos) | `GET/POST /compradores`, `GET /compradores/opcoes?busca=&limite=&pagina=`, `GET/PATCH/DELETE /compradores/:id` | Sem `telefone` (bd-12). `opcoes` devolve frigoríficos **e** pecuaristas no formato do comprador unificado, ordenados por nome: `{ itens, total }` |
+| Configurações | `GET /configuracoes/impostos`, `PATCH /configuracoes/impostos`, `GET /configuracoes/empresa`, `PATCH /configuracoes/empresa` | Alíquotas e dados cadastrais da empresa do usuário logado. `PATCH` **exige `Admin`** |
+| Compradores (frigoríficos) | `GET/POST /compradores`, `GET /compradores/opcoes?busca=&limite=&pagina=`, `GET/PATCH/DELETE /compradores/:id` | Sem `telefone` (bd-12) nem `pessoa_contato` (bd-13); `inscricao_estadual` obrigatória (texto livre, até 12, ex.: `"ISENTO"`). `opcoes` devolve frigoríficos **e** pecuaristas no formato do comprador unificado, ordenados por nome: `{ itens, total }` |
 | Tipos de gado | `GET /tipos-gado`, `POST /tipos-gado`, `PATCH/DELETE /tipos-gado/:id` | Nomes sugeridos para lotes, da empresa do JWT. `POST/PATCH/DELETE` **exigem `Admin`**; nome repetido (sem maiúsculas) → `409` |
 
 A documentação interativa (Swagger) está em `${NEXT_PUBLIC_API_URL}/docs` — útil para explorar
@@ -181,12 +181,11 @@ reenviar com o mesmo `uuid_origem` (do pecuarista e de cada fazenda nova) não d
 ### `negocio`
 Campos enviados pelo front no `POST`/`PATCH`:
 `empresa_id`, `pecuarista_id`, `fazenda_id`, `comprador` (`{ "tipo": "frigorifico" | "pecuarista", "id": 12 }`),
-`valor_unidade` (obrigatório, ≥ 0, 2 casas: R$/@, R$/kg ou R$/cabeça conforme a modalidade — **um só
-para todos os lotes**), `modalidade` (`"arroba"` | `"kg"` | `"cabeca"`),
+`modalidade` (`"arroba"` | `"kg"` | `"cabeca"`),
 `tipo_gado` (`"Gordo"` | `"Reposicao"`), `tipo_negocio` (`"Desconto em folha"` | `"Livre"` | `"Funrural"`),
 `data_negocio` (ISO 8601), `porcentagem_comissao` (0–100, 2 casas; R$/@ ou %, ver abaixo), `observacao`.
-`comprador_id` (formato antigo), `tipo_lote`, `media_carimbo`, os rendimentos por raça, `qtd_animais` e
-`valor_total` **não são aceitos** (`400`).
+`comprador_id` (formato antigo), `valor_unidade` (bd-13: é de cada lote), `tipo_lote`, `media_carimbo`,
+os rendimentos por raça, `qtd_animais`, `valor_total_bruto` e `valor_total_liquido` **não são aceitos** (`400`).
 
 **Comprador (bd-12): frigorífico ou pecuarista.** A API grava `comprador_id` (frigorífico) **ou**
 `comprador_pecuarista_id` (pecuarista) e deixa a outra coluna `null`. Sem comprador → `400` "Informe o
@@ -196,20 +195,21 @@ Toda resposta de negócio traz `comprador` unificado (as duas colunas continuam 
 
 ```json
 { "tipo": "frigorifico", "id": 3, "nome": "Frigorífico X", "documento": "00.000.000/0001-00",
-  "municipio": "Campo Grande", "pessoa_contato": "Fulano" }
+  "municipio": "Campo Grande", "inscricao_estadual": "28.123.456-7" }
 ```
 
 Para pecuarista: `nome` = nome do pecuarista, `documento` = CPF/CNPJ, `municipio` = o da primeira
-fazenda dele, `pessoa_contato` = `null`. Mudar `valor_unidade` (ou a modalidade) recalcula todas as
-cabeças, lotes, comissão e impostos do negócio. Pecuarista ou frigorífico com negócios (como vendedor
+fazenda dele, `inscricao_estadual` = `null`. Mudar a modalidade recalcula todas as cabeças, lotes,
+comissão, impostos e o valor líquido do negócio. Pecuarista ou frigorífico com negócios (como vendedor
 ou comprador) não pode ser excluído (`409`).
 
 A fazenda precisa estar vinculada ao pecuarista (FK composta no banco): senão, `400` "A fazenda não
-pertence ao pecuarista selecionado". Mudar o `tipo_negocio` recalcula Funrural e Senar.
+pertence ao pecuarista selecionado". Mudar o `tipo_negocio` recalcula Funrural, Senar e o líquido.
 
 Campos que **a API calcula sozinha e retorna, mas o front não envia** (a partir dos lotes e de
 todas as cabeças de todos os lotes, a cada criação/edição/exclusão de lote ou gado):
-`qtd_animais` (soma dos lotes), `valor_total` (soma de `valor_total_lote`), `valor_medio`,
+`qtd_animais` (soma dos lotes), `valor_total_bruto` (soma de `valor_total_lote`; era `valor_total` até o
+bd-12), `valor_total_liquido` (= bruto − `funrural` − `senar`; a comissão não entra), `valor_medio`,
 `peso_total_quilos`/`_arroba`, `peso_medio_quilos`/`_arroba`, `mais_pesado_quilos`/`_arroba`,
 `mais_leve_quilos`/`_arroba`, `rendimento_medio` = soma(`peso_calculo`) / soma(`peso_total`) × 100
 (ponderado, não a média dos lotes), `comissao`, `funrural`, `senar`. Sem cabeças, pesos e médias
@@ -232,8 +232,8 @@ em toda resposta de negócio (não é coluna e não é aceito em escrita):
 | `tipo_gado` | `modalidade` | `modo_comissao` | `porcentagem_comissao` guarda | `comissao` |
 |---|---|---|---|---|
 | Gordo | `arroba` ou `kg` | `por_arroba` | R$ por arroba (ex.: 2,00) | valor × `peso_total_quilos` ÷ 15 (peso **vivo**, não a arroba de carcaça) |
-| Gordo | `cabeca` | `percentual` | percentual | `valor_total` × valor ÷ 100 |
-| Reposicao | qualquer | `percentual` | percentual | `valor_total` × valor ÷ 100 |
+| Gordo | `cabeca` | `percentual` | percentual | `valor_total_bruto` × valor ÷ 100 |
+| Reposicao | qualquer | `percentual` | percentual | `valor_total_bruto` × valor ÷ 100 |
 
 A arroba não é arredondada antes de multiplicar (2,00 × 350 kg ÷ 15 = 46,666… → **46,67**); só o
 resultado final, `ROUND_HALF_UP`. Sem cabeças pesadas, a comissão por arroba é 0,00. Fica `null`
@@ -267,10 +267,10 @@ passam a ter rendimento 100. As cabeças são recalculadas.
 ### `lote`
 `POST /negocios/:negocioId/lotes` e `PATCH /lotes/:id`:
 `nome_lote` (até 30, **único no negócio** ignorando maiúsculas/minúsculas — repetido dá `400`),
-`tipo_lote` (`"Vaca"` | `"Boi"` | `"Novilha"` | `"Garrote"` | `"Bezerro"` | `"Variados"`), `genero`
+`valor_unidade` (obrigatório no `POST`, ≥ 0, 2 casas: R$/@, R$/kg ou R$/cabeça conforme a modalidade —
+**cada lote tem o seu**, bd-13), `tipo_lote` (`"Vaca"` | `"Boi"` | `"Novilha"` | `"Garrote"` | `"Bezerro"` | `"Variados"`), `genero`
 (`"Macho"` | `"Femea"`), `rendimento_carcaca` (0–100, 2 casas), `media_carimbo` (opcional, texto livre,
 até 30) e `ano_carimbo` (opcional, 4 dígitos) — `''` vira `null` —, `uuid_origem?` (só no `POST`).
-`valor_unidade` **não é mais do lote** (bd-12: enviado, `400`); o preço é o do negócio.
 O nome do lote é texto livre: as sugestões vêm de `GET /tipos-gado` (o nome é copiado, sem ligação).
 
 Regras por modalidade do negócio:
@@ -281,9 +281,9 @@ Regras por modalidade do negócio:
   `qtd_animais` nas outras modalidades dá `400`.
 
 Calculados pela API: `qtd_animais` (cabeças pesadas; em `"cabeca"`, a informada),
-`valor_total_lote` (soma das cabeças; em `"cabeca"`, `negocio.valor_unidade × qtd_animais`),
+`valor_total_lote` (soma das cabeças; em `"cabeca"`, `lote.valor_unidade × qtd_animais`),
 `valor_medio_cabeca_lote`, pesos totais/médios, mais pesado/mais leve (quilos e arroba) e
-`rendimento_medio`. Mudar `rendimento_carcaca` recalcula as cabeças do lote, o lote e o negócio. `DELETE /lotes/:id` com cabeças responde `409` ("Este lote tem X cabeças
+`rendimento_medio`. Mudar `rendimento_carcaca` ou `valor_unidade` recalcula as cabeças do lote, o lote e o negócio. `DELETE /lotes/:id` com cabeças responde `409` ("Este lote tem X cabeças
 pesadas. Remova ou mova as cabeças antes de excluir").
 
 ### `gado`
@@ -291,13 +291,13 @@ Campos enviados pelo front: `lote_id`, `peso_total`, `data_pesagem?` (ISO 8601; 
 atual), `horario_pesagem?` e `uuid_origem?` (fila offline). `negocio_id`, `genero`, `denominacao`,
 `ano_carimbo`, `rendimento_carcaca` e `carimbo` não existem mais — enviados, dão `400`.
 `PATCH /gados/:id` com outro `lote_id` move a cabeça (só para lote do **mesmo negócio**, senão `400`)
-e recalcula os dois lotes. Negócio `"cabeca"` não aceita gados (`400`).
+e recalcula os dois lotes (a cabeça passa a valer pelo rendimento e preço do lote novo). Negócio `"cabeca"` não aceita gados (`400`).
 
 Calculados pela API (não enviar): `gado_id`, `peso_calculo`, `peso_arroba`, `valor_total`:
 - `"arroba"`: `peso_calculo = peso_total × rendimento_carcaca do lote / 100`, `peso_arroba =
-  peso_calculo / 15`, `valor_total = peso_arroba × negocio.valor_unidade`.
+  peso_calculo / 15`, `valor_total = peso_arroba × lote.valor_unidade`.
 - `"kg"`: `peso_calculo = peso_total`, `peso_arroba = peso_total / 15` (Gordo) ou `peso_total / 30`
-  (Reposição), `valor_total = peso_total × negocio.valor_unidade`. A arroba é só informativa: não muda o valor.
+  (Reposição), `valor_total = peso_total × lote.valor_unidade`. A arroba é só informativa: não muda o valor.
   Trocar o `tipo_gado` de um negócio `"kg"` recalcula as cabeças de todos os lotes.
 
 Lotes e gados só são visíveis/alteráveis para usuários da empresa do negócio (outra empresa → `404`).
@@ -359,6 +359,13 @@ na ordem fazenda → pecuarista → comprador → negócio → atualização de 
   (outra empresa → 404). `empresa_id` vem do admin autenticado. `senha` no `PATCH` só se preenchida.
   E-mail duplicado → 409. Não é permitido excluir a própria conta nem excluir/rebaixar o último admin (400).
 - O token é validado contra o banco a cada requisição: usuário excluído → 401; mudança de nível vale na hora.
+
+## Dados da empresa
+
+- `GET /configuracoes/empresa` → `{ nome, cnpj, creci, banco, agencia, conta, chave_pix }` — qualquer usuário logado.
+- `PATCH /configuracoes/empresa` com os mesmos campos, todos obrigatórios — só `Admin` (senão 403). O CNPJ
+  é validado pelos dígitos verificadores e salvo no formato `00.000.000/0000-00`.
+- `POST/PATCH/DELETE /empresas` agora também exigem `Admin`.
 
 ## Impostos e taxas (Funrural e Senar)
 

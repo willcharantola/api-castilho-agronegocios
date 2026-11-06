@@ -16,7 +16,8 @@ const lote = (
   lote_id: loteId,
   negocio_id: negocioId,
   rendimento_carcaca: dec(rendimento),
-  negocio: { empresa_id: 1, modalidade, tipo_gado: tipoGado, valor_unidade: dec(300) },
+  valor_unidade: dec(300),
+  negocio: { empresa_id: 1, modalidade, tipo_gado: tipoGado },
 });
 
 function criarServico(lotes: ReturnType<typeof lote>[]) {
@@ -83,7 +84,7 @@ describe('GadosService.create', () => {
   });
 
   it('lote de outra empresa → 404', async () => {
-    const outro = { ...lote(10, 1, 50), negocio: { empresa_id: 2, modalidade: 'arroba', tipo_gado: 'Gordo', valor_unidade: dec(300) },
+    const outro = { ...lote(10, 1, 50), negocio: { empresa_id: 2, modalidade: 'arroba', tipo_gado: 'Gordo' },
     };
     const { servico } = criarServico([outro]);
     await expect(

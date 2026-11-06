@@ -119,7 +119,7 @@ describe('comCompradorUnificado', () => {
         nome_empresa: 'Frigorífico X',
         cnpj: '11.222.333/0001-81',
         municipio: 'Campo Grande',
-        pessoa_contato: 'Fulano',
+        inscricao_estadual: '28.123.456-7',
       },
       comprador_pecuarista: null,
     });
@@ -131,7 +131,7 @@ describe('comCompradorUnificado', () => {
         nome: 'Frigorífico X',
         documento: '11.222.333/0001-81',
         municipio: 'Campo Grande',
-        pessoa_contato: 'Fulano',
+        inscricao_estadual: '28.123.456-7',
       },
     });
 
@@ -151,7 +151,7 @@ describe('comCompradorUnificado', () => {
       nome: 'José',
       documento: '000.000.000-00',
       municipio: 'Dourados',
-      pessoa_contato: null,
+      inscricao_estadual: null,
     });
     expect(pecuarista).not.toHaveProperty('comprador_pecuarista');
   });

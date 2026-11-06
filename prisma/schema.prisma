@@ -57,6 +57,10 @@
 // atualizacao-bd12.md):
 //   - negocio.valor_unidade (NOT NULL) volta para o negócio: um único preço para todos os
 //     lotes; lote.valor_unidade saiu.
+// bd-13:
+//   - lote.valor_unidade (NOT NULL) de volta: cada lote tem o seu preço; saiu de negocio.
+//   - negocio.valor_total → valor_total_bruto; novo valor_total_liquido (bruto − Funrural − Senar).
+//   - comprador (frigorífico): sai pessoa_contato, entra inscricao_estadual (NOT NULL).
 //   - lote.media_carimbo e lote.ano_carimbo opcionais.
 //   - comprador sem telefone; fazenda.cnpj opcional.
 //   - comprador do negócio: frigorífico (comprador_id) OU pecuarista
@@ -152,14 +156,14 @@ model negocio {
   pecuarista_id           Int                @map("vendedor_id")
   hora_inicio_pesagem     DateTime?          @db.Time(6)
   hora_fim_pesagem        DateTime?          @db.Time(6)
-  valor_total             Decimal            @db.Decimal(15, 2)
+  valor_total_bruto       Decimal            @db.Decimal(15, 2)
+  /// valor_total_bruto − funrural − senar (calculado pela API).
+  valor_total_liquido     Decimal?           @db.Decimal(15, 2)
   valor_medio             Decimal?           @db.Decimal(15, 2)
   qtd_animais             Int
   modalidade              String             @db.VarChar(6)
   tipo_gado               String             @db.VarChar(9)
   tipo_negocio            String             @db.VarChar(20)
-  /// Preço por unidade (R$/@, R$/kg ou R$/cabeça), o mesmo para todos os lotes.
-  valor_unidade           Decimal            @db.Decimal(15, 2)
   mais_pesado_quilos      Decimal?           @db.Decimal(15, 2)
   mais_leve_quilos        Decimal?           @db.Decimal(15, 2)
   mais_pesado_arroba      Decimal?           @db.Decimal(15, 2)
@@ -197,6 +201,8 @@ model lote {
   negocio_id              Int
   nome_lote               String   @db.VarChar(30)
   tipo_lote               String   @db.VarChar(8)
+  /// Preço por unidade deste lote (R$/@, R$/kg ou R$/cabeça, conforme a modalidade).
+  valor_unidade           Decimal  @db.Decimal(15, 2)
   genero                  String   @db.VarChar(6)
   rendimento_carcaca      Decimal  @db.Decimal(5, 2)
   media_carimbo           String?  @db.VarChar(30)
@@ -238,13 +244,13 @@ model gado {
 }
 
 model comprador {
-  comprador_id   Int       @id @default(autoincrement())
-  nome_empresa   String    @db.VarChar(50)
-  cnpj           String    @db.VarChar(18)
-  municipio      String    @db.VarChar(30)
-  pessoa_contato String    @db.VarChar(30)
-  uuid_origem    String?   @unique @db.Uuid
-  negocio        negocio[]
+  comprador_id       Int       @id @default(autoincrement())
+  nome_empresa       String    @db.VarChar(50)
+  cnpj               String    @db.VarChar(18)
+  inscricao_estadual String    @db.VarChar(12)
+  municipio          String    @db.VarChar(30)
+  uuid_origem        String?   @unique @db.Uuid
+  negocio            negocio[]
 }
 
 model pecuarista_fazenda {

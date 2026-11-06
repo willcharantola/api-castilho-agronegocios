@@ -2,11 +2,22 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { handlePrismaError } from '../common/prisma-error.util';
 import { PrismaService } from '../prisma/prisma.service';
+import { UpdateDadosEmpresaDto } from './dto/update-dados-empresa.dto';
 import { UpdateImpostosDto } from './dto/update-impostos.dto';
 
 const SELECT_IMPOSTOS = {
   aliquota_funrural: true,
   aliquota_senar: true,
+} as const;
+
+const SELECT_DADOS_EMPRESA = {
+  nome: true,
+  cnpj: true,
+  creci: true,
+  banco: true,
+  agencia: true,
+  conta: true,
+  chave_pix: true,
 } as const;
 
 /** Configurações da empresa do usuário logado (empresa_id sempre vem do JWT). */
@@ -34,6 +45,25 @@ export class ConfiguracoesService {
         select: SELECT_IMPOSTOS,
       });
       return paraNumeros(empresa);
+    } catch (error) {
+      handlePrismaError(error);
+    }
+  }
+
+  findDadosEmpresa(empresaId: number) {
+    return this.prisma.empresa.findUniqueOrThrow({
+      where: { empresa_id: empresaId },
+      select: SELECT_DADOS_EMPRESA,
+    });
+  }
+
+  async updateDadosEmpresa(empresaId: number, dto: UpdateDadosEmpresaDto) {
+    try {
+      return await this.prisma.empresa.update({
+        where: { empresa_id: empresaId },
+        data: dto,
+        select: SELECT_DADOS_EMPRESA,
+      });
     } catch (error) {
       handlePrismaError(error);
     }

@@ -9,7 +9,7 @@ const NORMAL = { nivel_acesso: 'Normal' };
 
 const negocio = () => ({
   negocio_id: 1,
-  valor_total: 1000,
+  valor_total_bruto: 1000,
   comissao: 50,
   porcentagem_comissao: 5,
 });
@@ -31,7 +31,7 @@ describe('ocultarCamposDeComissao', () => {
     const resposta = ocultarCamposDeComissao(negocio(), NORMAL);
     expect(resposta).toEqual({
       negocio_id: 1,
-      valor_total: 1000,
+      valor_total_bruto: 1000,
       comissao: null,
       porcentagem_comissao: null,
     });

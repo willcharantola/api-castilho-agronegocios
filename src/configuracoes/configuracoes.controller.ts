@@ -4,6 +4,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import type { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
 import { ConfiguracoesService } from './configuracoes.service';
+import { UpdateDadosEmpresaDto } from './dto/update-dados-empresa.dto';
 import { UpdateImpostosDto } from './dto/update-impostos.dto';
 
 @ApiTags('configuracoes')
@@ -33,5 +34,28 @@ export class ConfiguracoesController {
     @Body() dto: UpdateImpostosDto,
   ) {
     return this.configuracoesService.updateImpostos(user.empresa_id, dto);
+  }
+
+  @ApiOperation({
+    summary: 'Dados cadastrais da empresa',
+    description:
+      'Nome, CNPJ, CRECI e dados bancários. Qualquer usuário logado.',
+  })
+  @Get('empresa')
+  findDadosEmpresa(@CurrentUser() user: AuthenticatedUser) {
+    return this.configuracoesService.findDadosEmpresa(user.empresa_id);
+  }
+
+  @ApiOperation({
+    summary: 'Alterar os dados cadastrais da empresa',
+    description: 'Só Admin.',
+  })
+  @Roles('Admin')
+  @Patch('empresa')
+  updateDadosEmpresa(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: UpdateDadosEmpresaDto,
+  ) {
+    return this.configuracoesService.updateDadosEmpresa(user.empresa_id, dto);
   }
 }
