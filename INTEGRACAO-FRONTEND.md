@@ -376,3 +376,13 @@ na ordem fazenda → pecuarista → comprador → negócio → atualização de 
 - Ao criar um negócio, a API copia as alíquotas da empresa para `negocio.aliquota_funrural` /
   `negocio.aliquota_senar` (não enviar no POST/PATCH). `funrural` e `senar` (R$) são sempre calculados
   com as alíquotas gravadas no próprio negócio: mudar a configuração só afeta negócios novos.
+
+## Dados bancários do pecuarista (opcionais)
+
+- Requer no banco: `ALTER TABLE vendedor ALTER COLUMN banco DROP NOT NULL, ALTER COLUMN agencia DROP NOT NULL,
+  ALTER COLUMN conta DROP NOT NULL, ALTER COLUMN chave_pix DROP NOT NULL;` (rodar antes de publicar a API).
+- `banco`, `agencia`, `conta` e `chave_pix` são opcionais no `POST`/`PATCH /pecuaristas`; texto vazio (ou só
+  espaços) é gravado como `null`, e a resposta traz `null` quando não há dado.
+- Banco, agência e conta: os três ou nenhum. Conta pela metade → 400 ("Dados bancários incompletos ...
+  Faltando: ..."). No `PATCH`, a regra considera o que já está gravado (campo ausente mantém o valor; `null`
+  apaga). A chave Pix é independente.

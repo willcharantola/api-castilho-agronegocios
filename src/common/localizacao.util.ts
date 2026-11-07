@@ -27,7 +27,8 @@ export function ehLinkMapaPermitido(valor: string): boolean {
     return false;
   }
   if (url.protocol !== 'https:' || url.username || url.password) return false;
-  const caminhoMaps = url.pathname === '/maps' || url.pathname.startsWith('/maps/');
+  const caminhoMaps =
+    url.pathname === '/maps' || url.pathname.startsWith('/maps/');
   switch (url.hostname) {
     case 'www.google.com':
     case 'google.com':
@@ -46,7 +47,9 @@ export function localizacaoValida(valor: string): boolean {
 }
 
 /** Decorator de DTO: string vazia/null passam (campo opcional); o resto precisa ser válido. */
-export function IsLocalizacaoGoogle(opcoes?: ValidationOptions): PropertyDecorator {
+export function IsLocalizacaoGoogle(
+  opcoes?: ValidationOptions,
+): PropertyDecorator {
   return (alvo, propriedade) =>
     registerDecorator({
       name: 'isLocalizacaoGoogle',
@@ -64,4 +67,46 @@ export function IsLocalizacaoGoogle(opcoes?: ValidationOptions): PropertyDecorat
           (typeof valor === 'string' && localizacaoValida(valor)),
       },
     });
+}
+
+/** Link curto (maps.app.goo.gl, goo.gl/maps): não traz o lugar, só redireciona para ele. */
+export function ehLinkCurto(valor: string): boolean {
+  if (!ehLinkMapaPermitido(valor)) return false;
+  const host = new URL(valor.trim()).hostname;
+  return host === 'maps.app.goo.gl' || host === 'goo.gl';
+}
+
+const MAX_REDIRECIONAMENTOS = 5;
+const TEMPO_LIMITE_MS = 5000;
+
+/**
+ * Link completo por trás de um link curto, para o front montar a pré-visualização do mapa
+ * (o navegador não consegue ler o redirecionamento por causa do CORS). Segue os
+ * redirecionamentos um a um e só enquanto eles apontam para hosts permitidos (nunca vira
+ * uma requisição para outro site). null se não chegar a um link completo do Maps.
+ */
+export async function expandirLinkMapa(
+  link: string,
+  buscar: typeof fetch = fetch,
+): Promise<string | null> {
+  let atual = link.trim();
+  for (let i = 0; i < MAX_REDIRECIONAMENTOS && ehLinkCurto(atual); i++) {
+    let resposta: Response;
+    try {
+      resposta = await buscar(atual, {
+        method: 'GET',
+        redirect: 'manual',
+        signal: AbortSignal.timeout(TEMPO_LIMITE_MS),
+      });
+    } catch {
+      return null;
+    }
+    const destino = resposta.headers.get('location');
+    if (resposta.status < 300 || resposta.status >= 400 || !destino)
+      return null;
+    const proximo = new URL(destino, atual).toString();
+    if (!ehLinkMapaPermitido(proximo)) return null;
+    atual = proximo;
+  }
+  return ehLinkCurto(atual) ? null : atual;
 }

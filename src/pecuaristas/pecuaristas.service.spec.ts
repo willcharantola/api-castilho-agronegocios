@@ -1,9 +1,12 @@
-import { ConflictException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import { FazendasService } from '../fazendas/fazendas.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { UploadsService } from '../uploads/uploads.service';
 import { CreatePecuaristaDto } from './dto/create-pecuarista.dto';
-import { PecuaristasService } from './pecuaristas.service';
+import {
+  PecuaristasService,
+  validarDadosBancarios,
+} from './pecuaristas.service';
 
 const DTO = {
   nome_pecuarista: 'João',
@@ -107,5 +110,57 @@ describe('PecuaristasService', () => {
     await expect(servico.desassociarFazenda(5, 7)).rejects.toBeInstanceOf(
       ConflictException,
     );
+  });
+});
+
+describe('dados bancários (banco, agência e conta juntos ou nenhum)', () => {
+  it('validarDadosBancarios: completo ou vazio passa; parcial é recusado', () => {
+    expect(() =>
+      validarDadosBancarios({ banco: 'BB', agencia: '1234', conta: '5' }),
+    ).not.toThrow();
+    expect(() =>
+      validarDadosBancarios({ banco: null, agencia: null, conta: null }),
+    ).not.toThrow();
+    expect(() => validarDadosBancarios({})).not.toThrow();
+    expect(() =>
+      validarDadosBancarios({ banco: 'BB', agencia: null, conta: undefined }),
+    ).toThrow(/Faltando: agência, conta/);
+  });
+
+  it('cadastro sem conta (só Pix) passa; conta pela metade → 400 antes de gravar', async () => {
+    const { prisma, servico } = criarServico();
+    const semConta = { ...DTO, banco: null, agencia: null, conta: null };
+    await expect(servico.create(semConta)).resolves.toBeDefined();
+
+    const metade = { ...DTO, conta: null };
+    await expect(servico.create(metade)).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+  });
+
+  it('edição considera o que já está gravado', async () => {
+    const { servico } = criarServico();
+    const gravado = { pecuarista_id: 5, banco: 'BB', agencia: '1', conta: '2' };
+    jest
+      .spyOn(servico, 'findOne')
+      .mockResolvedValue(
+        gravado as unknown as Awaited<ReturnType<typeof servico.findOne>>,
+      );
+    const update = jest.fn().mockResolvedValue(gravado);
+    (
+      servico as unknown as { prisma: { pecuarista: object } }
+    ).prisma.pecuarista = { update };
+
+    // Apagar só a conta deixaria banco e agência sozinhos.
+    await expect(servico.update(5, { conta: null })).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    // Apagar os três, ou mudar só o Pix, passa.
+    await expect(
+      servico.update(5, { banco: null, agencia: null, conta: null }),
+    ).resolves.toBeDefined();
+    await expect(servico.update(5, { chave_pix: null })).resolves.toBeDefined();
+    expect(update).toHaveBeenCalledTimes(2);
   });
 });

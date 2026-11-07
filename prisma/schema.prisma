@@ -132,10 +132,13 @@ model pecuarista {
   nome_pecuarista    String               @map("nome_vendedor") @db.VarChar(50)
   fisico_juridico    String               @db.VarChar(8)
   cpf_cnpj           String               @db.VarChar(20)
-  banco              String               @db.VarChar(20)
-  agencia            String               @db.VarChar(10)
-  conta              String               @db.VarChar(20)
-  chave_pix          String               @db.VarChar(50)
+  /// Dados bancários opcionais (2026-11-07): banco, agência e conta vêm juntos ou nenhum
+  /// (regra na API, pecuaristas.service); a chave Pix é independente. Requer no banco:
+  /// ALTER TABLE vendedor ALTER COLUMN banco/agencia/conta/chave_pix DROP NOT NULL.
+  banco              String?              @db.VarChar(20)
+  agencia            String?              @db.VarChar(10)
+  conta              String?              @db.VarChar(20)
+  chave_pix          String?              @db.VarChar(50)
   uuid_origem        String?              @unique @db.Uuid
   negocio            negocio[]            @relation("negocio_vendedor")
   /// Negócios em que o pecuarista é o comprador.
