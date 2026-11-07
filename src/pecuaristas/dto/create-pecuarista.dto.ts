@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   ArrayMinSize,
   IsArray,
@@ -13,6 +13,25 @@ import {
 } from 'class-validator';
 import { CpfCnpj } from '../../common/documentos.util';
 import { FazendaDoPecuaristaDto } from './fazenda-do-pecuarista.dto';
+
+/**
+ * Dado bancário opcional: espaços nas pontas são removidos e vazio vira null (sem dado).
+ * Banco, agência e conta juntos ou nenhum: regra no service (validarDadosBancarios), que
+ * na edição também considera o que já está gravado.
+ */
+function DadoBancarioOpcional(maxLength: number): PropertyDecorator {
+  return (alvo, propriedade) => {
+    ApiPropertyOptional({ maxLength, nullable: true })(alvo, propriedade);
+    Transform(({ value }: { value: unknown }) => {
+      if (typeof value !== 'string') return value;
+      const texto = value.trim();
+      return texto === '' ? null : texto;
+    })(alvo, propriedade);
+    IsOptional()(alvo, propriedade);
+    IsString()(alvo, propriedade);
+    MaxLength(maxLength)(alvo, propriedade);
+  };
+}
 
 export class CreatePecuaristaDto {
   @ApiProperty({ maxLength: 50 })
@@ -38,29 +57,18 @@ export class CreatePecuaristaDto {
   @MaxLength(20)
   cpf_cnpj: string;
 
-  @ApiProperty({ maxLength: 20 })
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(20)
-  banco: string;
+  @DadoBancarioOpcional(20)
+  banco?: string | null;
 
-  @ApiProperty({ maxLength: 10 })
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(10)
-  agencia: string;
+  @DadoBancarioOpcional(10)
+  agencia?: string | null;
 
-  @ApiProperty({ maxLength: 20 })
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(20)
-  conta: string;
+  @DadoBancarioOpcional(20)
+  conta?: string | null;
 
-  @ApiProperty({ maxLength: 50 })
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(50)
-  chave_pix: string;
+  /** Independente de banco/agência/conta. */
+  @DadoBancarioOpcional(50)
+  chave_pix?: string | null;
 
   @ApiProperty({
     type: [FazendaDoPecuaristaDto],
@@ -69,7 +77,9 @@ export class CreatePecuaristaDto {
       'uma já cadastrada. Só no POST — depois, use POST /pecuaristas/:id/fazendas.',
   })
   @IsArray()
-  @ArrayMinSize(1, { message: 'Cadastre pelo menos uma fazenda para o pecuarista' })
+  @ArrayMinSize(1, {
+    message: 'Cadastre pelo menos uma fazenda para o pecuarista',
+  })
   @ValidateNested({ each: true })
   @Type(() => FazendaDoPecuaristaDto)
   fazendas: FazendaDoPecuaristaDto[];

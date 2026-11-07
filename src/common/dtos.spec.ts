@@ -81,7 +81,9 @@ describe('DTOs do novo modelo de dados', () => {
       await expect(
         validar(CreateGadoDto, { ...GADO, [campo]: valor }),
       ).rejects.toThrow();
-      await expect(validar(UpdateGadoDto, { [campo]: valor })).rejects.toThrow();
+      await expect(
+        validar(UpdateGadoDto, { [campo]: valor }),
+      ).rejects.toThrow();
     });
 
     it('exige o lote', async () => {
@@ -118,10 +120,18 @@ describe('DTOs do novo modelo de dados', () => {
       const { media_carimbo: _m, ano_carimbo: _a, ...semCarimbo } = LOTE;
       await expect(validar(CreateLoteDto, semCarimbo)).resolves.toBeDefined();
       await expect(
-        validar(CreateLoteDto, { ...LOTE, media_carimbo: '', ano_carimbo: ' ' }),
+        validar(CreateLoteDto, {
+          ...LOTE,
+          media_carimbo: '',
+          ano_carimbo: ' ',
+        }),
       ).resolves.toMatchObject({ media_carimbo: null, ano_carimbo: null });
       await expect(
-        validar(CreateLoteDto, { ...LOTE, media_carimbo: null, ano_carimbo: null }),
+        validar(CreateLoteDto, {
+          ...LOTE,
+          media_carimbo: null,
+          ano_carimbo: null,
+        }),
       ).resolves.toBeDefined();
     });
 
@@ -137,16 +147,19 @@ describe('DTOs do novo modelo de dados', () => {
       ['fisico', '52998224725', '529.982.247-25'],
       ['fisico', '529.982.247-25', '529.982.247-25'],
       ['juridico', '11222333000181', '11.222.333/0001-81'],
-    ])('pecuarista %s aceita %s e grava %s', async (fisico_juridico, cpf_cnpj, gravado) => {
-      await expect(
-        validar(CreatePecuaristaDto, {
-          ...PECUARISTA,
-          fisico_juridico,
-          cpf_cnpj,
-          fazendas: [{ fazenda_id: 1 }],
-        }),
-      ).resolves.toMatchObject({ cpf_cnpj: gravado });
-    });
+    ])(
+      'pecuarista %s aceita %s e grava %s',
+      async (fisico_juridico, cpf_cnpj, gravado) => {
+        await expect(
+          validar(CreatePecuaristaDto, {
+            ...PECUARISTA,
+            fisico_juridico,
+            cpf_cnpj,
+            fazendas: [{ fazenda_id: 1 }],
+          }),
+        ).resolves.toMatchObject({ cpf_cnpj: gravado });
+      },
+    );
 
     it.each([
       ['fisico', '529.982.247-26'],
@@ -161,6 +174,43 @@ describe('DTOs do novo modelo de dados', () => {
           ...PECUARISTA,
           fisico_juridico,
           cpf_cnpj,
+          fazendas: [{ fazenda_id: 1 }],
+        }),
+      ).rejects.toThrow();
+    });
+
+    it('dados bancários são opcionais: vazio vira null e espaços saem', async () => {
+      await expect(
+        validar(CreatePecuaristaDto, {
+          ...PECUARISTA,
+          banco: '',
+          agencia: '  ',
+          conta: undefined,
+          chave_pix: ' joao@x.com ',
+          fazendas: [{ fazenda_id: 1 }],
+        }),
+      ).resolves.toMatchObject({
+        banco: null,
+        agencia: null,
+        chave_pix: 'joao@x.com',
+      });
+      const {
+        banco: _b,
+        agencia: _a,
+        conta: _c,
+        chave_pix: _p,
+        ...semBanco
+      } = PECUARISTA;
+      await expect(
+        validar(CreatePecuaristaDto, {
+          ...semBanco,
+          fazendas: [{ fazenda_id: 1 }],
+        }),
+      ).resolves.toBeDefined();
+      await expect(
+        validar(CreatePecuaristaDto, {
+          ...PECUARISTA,
+          banco: 'x'.repeat(21),
           fazendas: [{ fazenda_id: 1 }],
         }),
       ).rejects.toThrow();
@@ -185,20 +235,32 @@ describe('DTOs do novo modelo de dados', () => {
         validar(CreateCompradorDto, { ...COMPRADOR, cnpj: '11222333000181' }),
       ).resolves.toMatchObject({ cnpj: '11.222.333/0001-81' });
       await expect(
-        validar(CreateCompradorDto, { ...COMPRADOR, cnpj: '11.222.333/0001-82' }),
+        validar(CreateCompradorDto, {
+          ...COMPRADOR,
+          cnpj: '11.222.333/0001-82',
+        }),
       ).rejects.toThrow();
     });
 
-    it('frigorífico exige inscrição estadual (até 12) e recusa pessoa de contato', async () => {
+    it('frigorífico exige inscrição estadual no formato 00.000.000-0 e recusa pessoa de contato', async () => {
       const COMPRADOR = {
         nome_empresa: 'Frigorífico X',
         cnpj: '11.222.333/0001-81',
         municipio: 'Campo Grande',
       };
       await expect(
-        validar(CreateCompradorDto, { ...COMPRADOR, inscricao_estadual: ' ISENTO ' }),
-      ).resolves.toMatchObject({ inscricao_estadual: 'ISENTO' });
-      for (const inscricao_estadual of [undefined, '   ', '1234567890123']) {
+        validar(CreateCompradorDto, {
+          ...COMPRADOR,
+          inscricao_estadual: ' 281234567 ',
+        }),
+      ).resolves.toMatchObject({ inscricao_estadual: '28.123.456-7' });
+      for (const inscricao_estadual of [
+        undefined,
+        '   ',
+        'ISENTO',
+        '12345678',
+        '1234567890123',
+      ]) {
         await expect(
           validar(CreateCompradorDto, { ...COMPRADOR, inscricao_estadual }),
         ).rejects.toThrow();
@@ -215,11 +277,14 @@ describe('DTOs do novo modelo de dados', () => {
     it.each([
       ['28.766.688-3', '28.766.688-3'],
       ['287666883', '28.766.688-3'],
-    ])('inscrição estadual aceita %s e grava %s', async (inscricao_estadual, gravado) => {
-      await expect(
-        validar(CreateFazendaDto, { ...FAZENDA, inscricao_estadual }),
-      ).resolves.toMatchObject({ inscricao_estadual: gravado });
-    });
+    ])(
+      'inscrição estadual aceita %s e grava %s',
+      async (inscricao_estadual, gravado) => {
+        await expect(
+          validar(CreateFazendaDto, { ...FAZENDA, inscricao_estadual }),
+        ).resolves.toMatchObject({ inscricao_estadual: gravado });
+      },
+    );
 
     it.each(['28766688', '28.766.688-34', 'ABC', '28-766-688.3'])(
       'inscrição estadual recusa %s',
@@ -235,10 +300,18 @@ describe('DTOs do novo modelo de dados', () => {
       await expect(
         validar(CreatePecuaristaDto, {
           ...PECUARISTA,
-          fazendas: [{ ...fazenda, inscricao_estadual: '287666883', cnpj: '11222333000181' }],
+          fazendas: [
+            {
+              ...fazenda,
+              inscricao_estadual: '287666883',
+              cnpj: '11222333000181',
+            },
+          ],
         }),
       ).resolves.toMatchObject({
-        fazendas: [{ inscricao_estadual: '28.766.688-3', cnpj: '11.222.333/0001-81' }],
+        fazendas: [
+          { inscricao_estadual: '28.766.688-3', cnpj: '11.222.333/0001-81' },
+        ],
       });
       await expect(
         validar(CreatePecuaristaDto, {
@@ -266,14 +339,16 @@ describe('DTOs do novo modelo de dados', () => {
       },
     );
 
-    it.each(['11.222.333/0001-82', '1122233300018', '11.111.111/1111-11', 'abc'])(
-      'recusa %s',
-      async (cnpj) => {
-        await expect(
-          validar(CreateFazendaDto, { ...FAZENDA, cnpj }),
-        ).rejects.toThrow();
-      },
-    );
+    it.each([
+      '11.222.333/0001-82',
+      '1122233300018',
+      '11.111.111/1111-11',
+      'abc',
+    ])('recusa %s', async (cnpj) => {
+      await expect(
+        validar(CreateFazendaDto, { ...FAZENDA, cnpj }),
+      ).rejects.toThrow();
+    });
   });
 
   describe('fazenda: localização', () => {
@@ -310,10 +385,16 @@ describe('DTOs do novo modelo de dados', () => {
 
     it('endereço até 200 caracteres', async () => {
       await expect(
-        validar(CreateFazendaDto, { ...FAZENDA, endereco_fazenda: 'Rod. MS-134, km 20' }),
+        validar(CreateFazendaDto, {
+          ...FAZENDA,
+          endereco_fazenda: 'Rod. MS-134, km 20',
+        }),
       ).resolves.toBeDefined();
       await expect(
-        validar(CreateFazendaDto, { ...FAZENDA, endereco_fazenda: 'x'.repeat(201) }),
+        validar(CreateFazendaDto, {
+          ...FAZENDA,
+          endereco_fazenda: 'x'.repeat(201),
+        }),
       ).rejects.toThrow();
     });
   });
@@ -397,8 +478,15 @@ describe('DTOs do novo modelo de dados', () => {
     });
 
     it('PATCH não aceita valor da unidade, quantidade nem valores calculados', async () => {
-      for (const campo of ['valor_unidade', 'qtd_animais', 'valor_total_bruto', 'valor_total_liquido']) {
-        await expect(validar(UpdateNegocioDto, { [campo]: 3 })).rejects.toThrow();
+      for (const campo of [
+        'valor_unidade',
+        'qtd_animais',
+        'valor_total_bruto',
+        'valor_total_liquido',
+      ]) {
+        await expect(
+          validar(UpdateNegocioDto, { [campo]: 3 }),
+        ).rejects.toThrow();
       }
     });
   });

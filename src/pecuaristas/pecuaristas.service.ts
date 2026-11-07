@@ -29,6 +29,32 @@ function validarItemFazenda(item: FazendaDoPecuaristaDto) {
   }
 }
 
+type DadosConta = {
+  banco?: string | null;
+  agencia?: string | null;
+  conta?: string | null;
+};
+
+const CAMPOS_CONTA = [
+  ['banco', 'banco'],
+  ['agencia', 'agência'],
+  ['conta', 'conta'],
+] as const;
+
+/**
+ * Banco, agência e conta: todos preenchidos ou nenhum (a chave Pix é independente). Os
+ * dados vêm já sem espaços e com vazio como null (DadoBancarioOpcional).
+ */
+export function validarDadosBancarios(dados: DadosConta) {
+  const faltando = CAMPOS_CONTA.filter(([campo]) => dados[campo] == null);
+  if (faltando.length > 0 && faltando.length < CAMPOS_CONTA.length) {
+    throw new BadRequestException(
+      'Dados bancários incompletos: informe banco, agência e conta juntos, ou deixe os ' +
+        `três em branco. Faltando: ${faltando.map(([, nome]) => nome).join(', ')}.`,
+    );
+  }
+}
+
 @Injectable()
 export class PecuaristasService {
   constructor(
@@ -43,6 +69,7 @@ export class PecuaristasService {
    */
   async create(dto: CreatePecuaristaDto) {
     const { fazendas, ...dados } = dto;
+    validarDadosBancarios(dados);
     fazendas.forEach(validarItemFazenda);
     const { registro } = await criarIdempotente(
       dto.uuid_origem,
@@ -80,7 +107,15 @@ export class PecuaristasService {
   }
 
   async update(pecuaristaId: number, dto: UpdatePecuaristaDto) {
-    await this.findOne(pecuaristaId);
+    const atual = await this.findOne(pecuaristaId);
+    // Campo ausente no PATCH mantém o gravado; null apaga.
+    const valor = (campo: keyof DadosConta) =>
+      dto[campo] !== undefined ? dto[campo] : atual[campo];
+    validarDadosBancarios({
+      banco: valor('banco'),
+      agencia: valor('agencia'),
+      conta: valor('conta'),
+    });
     try {
       return await this.prisma.pecuarista.update({
         where: { pecuarista_id: pecuaristaId },

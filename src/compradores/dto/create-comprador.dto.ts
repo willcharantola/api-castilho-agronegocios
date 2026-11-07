@@ -1,5 +1,4 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Transform } from 'class-transformer';
 import {
   IsNotEmpty,
   IsOptional,
@@ -7,7 +6,7 @@ import {
   IsUUID,
   MaxLength,
 } from 'class-validator';
-import { Cnpj } from '../../common/documentos.util';
+import { Cnpj, InscricaoEstadual } from '../../common/documentos.util';
 
 export class CreateCompradorDto {
   @ApiProperty({ maxLength: 50 })
@@ -31,14 +30,12 @@ export class CreateCompradorDto {
     maxLength: 12,
     example: '28.123.456-7',
     description:
-      'Inscrição estadual do frigorífico (texto livre até 12 caracteres, ex.: "ISENTO"); ' +
-      'formato ainda a confirmar com o cliente.',
+      'Inscrição estadual do frigorífico (MS), como a da fazenda: aceita sem pontuação e é ' +
+      'gravada como 00.000.000-0.',
   })
-  @Transform(({ value }: { value: unknown }) =>
-    typeof value === 'string' ? value.trim() : value,
-  )
   @IsString()
   @IsNotEmpty({ message: 'Informe a inscrição estadual' })
+  @InscricaoEstadual()
   @MaxLength(12)
   inscricao_estadual: string;
 
