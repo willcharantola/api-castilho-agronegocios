@@ -9,6 +9,7 @@ import {
   Post,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
 import { CreateLoteDto } from './dto/create-lote.dto';
@@ -17,6 +18,8 @@ import { LotesService } from './lotes.service';
 
 @ApiTags('lotes')
 @ApiBearerAuth()
+// Cadastros: somente Admin (o usuário Normal só acessa as rotas de pesagem).
+@Roles('Admin')
 @Controller()
 export class LotesController {
   constructor(private readonly lotesService: LotesService) {}

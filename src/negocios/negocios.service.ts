@@ -3,10 +3,14 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import type { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
+import { podeAcessarNegocio } from '../auth/permissoes.util';
 import { Prisma } from '@prisma/client';
 import {
   NOME_LOTE_UNICO,
   RENDIMENTO_NEUTRO,
+  STATUS_PRIVADO,
+  STATUS_PUBLICO,
   type TipoNegocio,
 } from '../common/dominio';
 import { criarIdempotente } from '../common/idempotencia.util';
@@ -28,6 +32,12 @@ import { INCLUDE_COMPRADOR } from './comprador.util';
 import { CompradorDoNegocioDto } from './dto/comprador-do-negocio.dto';
 import { CreateNegocioDto } from './dto/create-negocio.dto';
 import { UpdateNegocioDto } from './dto/update-negocio.dto';
+import {
+  SELECT_ITEM_PESAGEM,
+  SELECT_PESAGEM,
+  itemMinhasPesagens,
+  negocioParaPesagem,
+} from './pesagem.util';
 
 /** Alíquotas de Funrural e Senar em pontos percentuais (1.5 = 1,5%). */
 type Aliquotas = { aliquota_funrural: number; aliquota_senar: number };
@@ -47,6 +57,12 @@ const SELECT_CALCULO = {
   ...SELECT_ALIQUOTAS,
 } as const;
 
+/** Comprador unificado (ver comprador.util) e o usuário responsável (só id e nome). */
+const INCLUDE_NEGOCIO = {
+  ...INCLUDE_COMPRADOR,
+  responsavel: { select: { usuario_id: true, nome: true, sobrenome: true } },
+} as const satisfies Prisma.negocioInclude;
+
 /** Lotes em ordem de cadastro, cada um com suas cabeças em ordem de cadastro. */
 const INCLUDE_LOTES = {
   lotes: {
@@ -62,6 +78,9 @@ export const MENSAGEM_COMPRADOR_E_VENDEDOR =
   'O comprador não pode ser o próprio vendedor';
 
 export const MENSAGEM_COMPRADOR_NAO_ENCONTRADO = 'Comprador não encontrado';
+
+export const MENSAGEM_RESPONSAVEL_INVALIDO =
+  'Usuário responsável não encontrado nesta empresa';
 
 /** Colunas do comprador no negócio: exatamente uma preenchida (CHECK no banco). */
 type ColunasComprador = {
@@ -79,15 +98,32 @@ export type ResumoNegocios = {
   total_cabecas: number | null;
 };
 
-/** Filtros da listagem de negócios (fazenda e intervalo de data_negocio). */
-function filtroDeNegocios(
-  fazendaId?: number,
-  dataInicio?: string,
-  dataFim?: string,
-): Prisma.negocioWhereInput {
+/** Filtros da listagem de negócios. */
+export type FiltrosNegocios = {
+  fazenda_id?: number;
+  data_inicio?: string;
+  data_fim?: string;
+  responsavel_id?: number;
+  status_visualizacao?: string;
+};
+
+/** Filtros da listagem (fazenda, intervalo de data_negocio, responsável e visualização). */
+function filtroDeNegocios({
+  fazenda_id: fazendaId,
+  data_inicio: dataInicio,
+  data_fim: dataFim,
+  responsavel_id: responsavelId,
+  status_visualizacao: statusVisualizacao,
+}: FiltrosNegocios = {}): Prisma.negocioWhereInput {
   const where: Prisma.negocioWhereInput = {};
   if (fazendaId !== undefined) {
     where.fazenda_id = fazendaId;
+  }
+  if (responsavelId !== undefined) {
+    where.responsavel_id = responsavelId;
+  }
+  if (statusVisualizacao !== undefined) {
+    where.status_visualizacao = statusVisualizacao;
   }
   if (dataInicio || dataFim) {
     where.data_negocio = {
@@ -117,16 +153,22 @@ export function gadoParaCalculo(gado: {
 export class NegociosService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async create(dto: CreateNegocioDto) {
+  /**
+   * `autorId`: quem cadastra (o Admin autenticado), responsável quando o DTO não traz um.
+   * O status de visualização começa 'Privado' se não for informado.
+   */
+  async create(dto: CreateNegocioDto, autorId: number) {
     const { comprador, ...dados } = dto;
     await this.garantirVinculo(dto.pecuarista_id, dto.fazenda_id);
+    const responsavelId = dto.responsavel_id ?? autorId;
+    await this.garantirResponsavel(responsavelId, dto.empresa_id);
 
     const { registro } = await criarIdempotente(
       dto.uuid_origem,
       (uuid_origem) =>
         this.prisma.negocio.findUnique({
           where: { uuid_origem },
-          include: INCLUDE_COMPRADOR,
+          include: INCLUDE_NEGOCIO,
         }),
       async () => {
         const colunas = await this.colunasDoComprador(
@@ -141,11 +183,13 @@ export class NegociosService {
           dto.empresa_id,
         );
         return this.prisma.negocio.create({
-          include: INCLUDE_COMPRADOR,
+          include: INCLUDE_NEGOCIO,
           data: {
             ...dados,
             ...colunas,
             ...aliquotas,
+            responsavel_id: responsavelId,
+            status_visualizacao: dto.status_visualizacao ?? STATUS_PRIVADO,
             data_negocio: new Date(dto.data_negocio),
             // Ainda não há lotes (bruto = 0), então a comissão em R$ começa em 0
             // e é recalculada por recalcular() conforme o valor total muda.
@@ -173,13 +217,60 @@ export class NegociosService {
     return registro;
   }
 
-  findAll(fazendaId?: number, dataInicio?: string, dataFim?: string) {
+  findAll(filtros: FiltrosNegocios = {}) {
     // Mais recente primeiro (ordem de cadastro invertida).
     return this.prisma.negocio.findMany({
-      where: filtroDeNegocios(fazendaId, dataInicio, dataFim),
+      where: filtroDeNegocios(filtros),
       orderBy: { negocio_id: 'desc' },
-      include: INCLUDE_COMPRADOR,
+      include: INCLUDE_NEGOCIO,
     });
+  }
+
+  /**
+   * "Minhas pesagens": negócios 'Publico' em que o usuário é o responsável, data mais
+   * recente primeiro, na visão reduzida (sem valores, comprador nem comissão).
+   */
+  async minhasPesagens(usuario: AuthenticatedUser) {
+    const negocios = await this.prisma.negocio.findMany({
+      where: {
+        empresa_id: usuario.empresa_id,
+        responsavel_id: usuario.id,
+        status_visualizacao: STATUS_PUBLICO,
+      },
+      orderBy: [{ data_negocio: 'desc' }, { negocio_id: 'desc' }],
+      select: SELECT_ITEM_PESAGEM,
+    });
+    return negocios.map(itemMinhasPesagens);
+  }
+
+  /** Negócio para a tela de pesagem (visão reduzida); sem acesso, 404. */
+  async pesagem(negocioId: number, usuario: AuthenticatedUser) {
+    await this.negocioAcessivel(negocioId, usuario);
+    const negocio = await this.prisma.negocio.findUniqueOrThrow({
+      where: { negocio_id: negocioId },
+      select: SELECT_PESAGEM,
+    });
+    return negocioParaPesagem(negocio);
+  }
+
+  /**
+   * Garante que o usuário pode acessar o negócio (ver podeAcessarNegocio). Negócio de
+   * outro responsável, 'Privado' ou de outra empresa responde 404, como se não existisse.
+   */
+  async negocioAcessivel(negocioId: number, usuario: AuthenticatedUser) {
+    const negocio = await this.prisma.negocio.findUnique({
+      where: { negocio_id: negocioId },
+      select: {
+        negocio_id: true,
+        empresa_id: true,
+        responsavel_id: true,
+        status_visualizacao: true,
+      },
+    });
+    if (!negocio || !podeAcessarNegocio(usuario, negocio)) {
+      throw new NotFoundException(`Negócio ${negocioId} não encontrado`);
+    }
+    return negocio;
   }
 
   /**
@@ -189,9 +280,7 @@ export class NegociosService {
    */
   async resumo(
     podeVer: boolean,
-    fazendaId?: number,
-    dataInicio?: string,
-    dataFim?: string,
+    filtros: FiltrosNegocios = {},
   ): Promise<ResumoNegocios> {
     if (!podeVer) {
       return {
@@ -201,7 +290,7 @@ export class NegociosService {
       };
     }
     const resultado = await this.prisma.negocio.aggregate({
-      where: filtroDeNegocios(fazendaId, dataInicio, dataFim),
+      where: filtroDeNegocios(filtros),
       _count: { _all: true },
       _sum: { comissao: true, qtd_animais: true },
     });
@@ -217,7 +306,7 @@ export class NegociosService {
       where: { negocio_id: negocioId },
       include: {
         ...INCLUDE_LOTES,
-        ...INCLUDE_COMPRADOR,
+        ...INCLUDE_NEGOCIO,
         pecuarista: true,
         fazenda: true,
       },
@@ -267,6 +356,14 @@ export class NegociosService {
       throw new BadRequestException(MENSAGEM_TROCA_PARA_CABECA);
     }
 
+    // Trocar o responsável não mexe no status (e vice-versa): cada campo vai como veio.
+    if (
+      dto.responsavel_id !== undefined &&
+      dto.responsavel_id !== atual.responsavel_id
+    ) {
+      await this.garantirResponsavel(dto.responsavel_id, atual.empresa_id);
+    }
+
     const pecuaristaId = dto.pecuarista_id ?? atual.pecuarista_id;
     const fazendaId = dto.fazenda_id ?? atual.fazenda_id;
     if (
@@ -313,7 +410,7 @@ export class NegociosService {
     }
     return this.prisma.negocio.findUniqueOrThrow({
       where: { negocio_id: negocioId },
-      include: INCLUDE_COMPRADOR,
+      include: INCLUDE_NEGOCIO,
     });
   }
 
@@ -322,12 +419,18 @@ export class NegociosService {
    * registra hora_fim_pesagem com a hora local do cliente (ver horaAtual), ou com a
    * hora informada pela fila offline (`horaFim`, capturada no aparelho ao concluir).
    */
-  async concluir(negocioId: number, fuso?: string, horaFim?: string) {
-    await this.findOne(negocioId);
+  async concluir(
+    negocioId: number,
+    usuario: AuthenticatedUser,
+    fuso?: string,
+    horaFim?: string,
+  ) {
+    // O Normal conclui a pesagem dos negócios liberados para ele.
+    await this.negocioAcessivel(negocioId, usuario);
     try {
       return await this.prisma.negocio.update({
         where: { negocio_id: negocioId },
-        include: INCLUDE_COMPRADOR,
+        include: INCLUDE_NEGOCIO,
         data: {
           hora_fim_pesagem: horaFim ? horaParaDate(horaFim) : horaAtual(fuso),
         },
@@ -532,6 +635,21 @@ export class NegociosService {
       throw new BadRequestException(MENSAGEM_COMPRADOR_NAO_ENCONTRADO);
     }
     return { comprador_id: null, comprador_pecuarista_id: comprador.id };
+  }
+
+  /**
+   * Responsável válido: usuário existente da mesma empresa do negócio (Normal ou Admin).
+   * O banco não tem coluna de usuário ativo: quem sai da empresa é excluído, e a exclusão
+   * é recusada enquanto ele for responsável por algum negócio.
+   */
+  private async garantirResponsavel(usuarioId: number, empresaId: number) {
+    const usuario = await this.prisma.usuario.findUnique({
+      where: { usuario_id: usuarioId },
+      select: { empresa_id: true },
+    });
+    if (!usuario || usuario.empresa_id !== empresaId) {
+      throw new BadRequestException(MENSAGEM_RESPONSAVEL_INVALIDO);
+    }
   }
 
   /**

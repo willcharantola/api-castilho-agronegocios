@@ -15,6 +15,7 @@ import {
   ApiQuery,
   ApiTags,
 } from '@nestjs/swagger';
+import { Roles } from '../auth/decorators/roles.decorator';
 import { CompradoresService } from './compradores.service';
 import { CreateCompradorDto } from './dto/create-comprador.dto';
 import { OpcoesCompradorQueryDto } from './dto/opcoes-comprador-query.dto';
@@ -22,6 +23,8 @@ import { UpdateCompradorDto } from './dto/update-comprador.dto';
 
 @ApiTags('compradores')
 @ApiBearerAuth()
+// Cadastros: somente Admin (o usuário Normal só acessa as rotas de pesagem).
+@Roles('Admin')
 @Controller('compradores')
 export class CompradoresController {
   constructor(private readonly compradoresService: CompradoresService) {}

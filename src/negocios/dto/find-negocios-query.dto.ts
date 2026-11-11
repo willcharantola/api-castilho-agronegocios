@@ -1,6 +1,7 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsDateString, IsInt, IsOptional } from 'class-validator';
+import { IsDateString, IsIn, IsInt, IsOptional } from 'class-validator';
+import { STATUS_VISUALIZACAO } from '../../common/dominio';
 
 export class FindNegociosQueryDto {
   @ApiPropertyOptional()
@@ -22,4 +23,15 @@ export class FindNegociosQueryDto {
   @IsOptional()
   @IsDateString()
   data_fim?: string;
+
+  @ApiPropertyOptional({ description: 'Filtra pelo usuário responsável.' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  responsavel_id?: number;
+
+  @ApiPropertyOptional({ enum: STATUS_VISUALIZACAO })
+  @IsOptional()
+  @IsIn(STATUS_VISUALIZACAO)
+  status_visualizacao?: string;
 }

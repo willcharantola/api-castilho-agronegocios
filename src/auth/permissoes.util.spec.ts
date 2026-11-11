@@ -1,6 +1,7 @@
 import {
   ehAdmin,
   ocultarCamposDeComissao,
+  podeAcessarNegocio,
   semCamposDeComissao,
 } from './permissoes.util';
 
@@ -67,5 +68,40 @@ describe('semCamposDeComissao', () => {
     expect(limpo).toEqual({ observacao: 'x' });
     expect('porcentagem_comissao' in limpo).toBe(false);
     expect(dto.porcentagem_comissao).toBe(5);
+  });
+});
+
+describe('podeAcessarNegocio', () => {
+  const usuario = (id: number, nivel_acesso: string, empresa_id = 1) => ({
+    id,
+    empresa_id,
+    nivel_acesso,
+  });
+  const negocioDe = (responsavel_id: number, status_visualizacao: string) => ({
+    empresa_id: 1,
+    responsavel_id,
+    status_visualizacao,
+  });
+
+  it('Admin acessa qualquer negócio da empresa, Publico ou Privado', () => {
+    const admin = usuario(1, 'Admin');
+    expect(podeAcessarNegocio(admin, negocioDe(9, 'Privado'))).toBe(true);
+    expect(podeAcessarNegocio(admin, negocioDe(9, 'Publico'))).toBe(true);
+  });
+
+  it('ninguém acessa negócio de outra empresa', () => {
+    expect(
+      podeAcessarNegocio(usuario(1, 'Admin', 2), negocioDe(1, 'Publico')),
+    ).toBe(false);
+    expect(
+      podeAcessarNegocio(usuario(5, 'Normal', 2), negocioDe(5, 'Publico')),
+    ).toBe(false);
+  });
+
+  it('Normal acessa só o Publico em que é o responsável', () => {
+    const normal = usuario(5, 'Normal');
+    expect(podeAcessarNegocio(normal, negocioDe(5, 'Publico'))).toBe(true);
+    expect(podeAcessarNegocio(normal, negocioDe(5, 'Privado'))).toBe(false);
+    expect(podeAcessarNegocio(normal, negocioDe(6, 'Publico'))).toBe(false);
   });
 });

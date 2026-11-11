@@ -41,6 +41,20 @@ export class UsuariosService {
     });
   }
 
+  /** Opções do seletor "Usuário responsável" do negócio (sem e-mail nem senha). */
+  responsaveis(admin: AuthenticatedUser) {
+    return this.prisma.usuario.findMany({
+      where: { empresa_id: admin.empresa_id },
+      select: {
+        usuario_id: true,
+        nome: true,
+        sobrenome: true,
+        nivel_acesso: true,
+      },
+      orderBy: [{ nome: 'asc' }, { sobrenome: 'asc' }],
+    });
+  }
+
   async findOne(admin: AuthenticatedUser, usuarioId: number) {
     const usuario = await this.prisma.usuario.findFirst({
       where: { usuario_id: usuarioId, empresa_id: admin.empresa_id },
@@ -86,6 +100,16 @@ export class UsuariosService {
     }
     if (alvo.nivel_acesso === 'Admin') {
       await this.garantirOutroAdmin(admin.empresa_id, usuarioId);
+    }
+    // A FK de negocio.responsavel_id recusaria a exclusão; aqui sai uma mensagem clara.
+    const negocios = await this.prisma.negocio.count({
+      where: { responsavel_id: usuarioId },
+    });
+    if (negocios > 0) {
+      throw new ConflictException(
+        `Este usuário é responsável por ${negocios} ${negocios === 1 ? 'negócio' : 'negócios'}. ` +
+          'Troque o responsável desses negócios antes de excluí-lo.',
+      );
     }
     try {
       return await this.prisma.usuario.delete({

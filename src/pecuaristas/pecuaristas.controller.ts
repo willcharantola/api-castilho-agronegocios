@@ -9,6 +9,7 @@ import {
   Post,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { Roles } from '../auth/decorators/roles.decorator';
 import { CreatePecuaristaDto } from './dto/create-pecuarista.dto';
 import { FazendaDoPecuaristaDto } from './dto/fazenda-do-pecuarista.dto';
 import { UpdatePecuaristaDto } from './dto/update-pecuarista.dto';
@@ -16,6 +17,8 @@ import { PecuaristasService } from './pecuaristas.service';
 
 @ApiTags('pecuaristas')
 @ApiBearerAuth()
+// Cadastros: somente Admin (o usuário Normal só acessa as rotas de pesagem).
+@Roles('Admin')
 @Controller('pecuaristas')
 export class PecuaristasController {
   constructor(private readonly pecuaristasService: PecuaristasService) {}

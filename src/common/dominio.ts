@@ -25,7 +25,11 @@ export type Genero = (typeof GENEROS)[number];
 export const TIPOS_COMPRADOR = ['frigorifico', 'pecuarista'] as const;
 export type TipoComprador = (typeof TIPOS_COMPRADOR)[number];
 
-export const TIPOS_NEGOCIO = ['Desconto em folha', 'Livre', 'Funrural'] as const;
+export const TIPOS_NEGOCIO = [
+  'Desconto em folha',
+  'Livre',
+  'Funrural',
+] as const;
 export type TipoNegocio = (typeof TIPOS_NEGOCIO)[number];
 
 /** Rendimento neutro (peso_calculo = peso_total) gravado nos lotes das modalidades "kg" e "cabeca". */
@@ -33,3 +37,9 @@ export const RENDIMENTO_NEUTRO = 100;
 
 /** Nome do lote criado automaticamente nos negócios da modalidade "cabeca". */
 export const NOME_LOTE_UNICO = 'Lote único';
+
+/** Visualização do negócio: 'Publico' = o responsável enxerga e pesa; 'Privado' = só Admin. */
+export const STATUS_VISUALIZACAO = ['Publico', 'Privado'] as const;
+export type StatusVisualizacao = (typeof STATUS_VISUALIZACAO)[number];
+export const STATUS_PUBLICO: StatusVisualizacao = 'Publico';
+export const STATUS_PRIVADO: StatusVisualizacao = 'Privado';

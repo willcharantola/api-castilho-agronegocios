@@ -386,3 +386,18 @@ na ordem fazenda → pecuarista → comprador → negócio → atualização de 
 - Banco, agência e conta: os três ou nenhum. Conta pela metade → 400 ("Dados bancários incompletos ...
   Faltando: ..."). No `PATCH`, a regra considera o que já está gravado (campo ausente mantém o valor; `null`
   apaga). A chave Pix é independente.
+
+## Usuário responsável e visualização do negócio (Público/Privado)
+
+Banco: aplicar `script-migracao-acesso-por-negocio.sql` (colunas `negocio.responsavel_id` NOT NULL e `negocio.status_visualizacao` 'Publico' | 'Privado', padrão 'Privado').
+
+- **Admin** cadastra/edita negócios e lotes e define `responsavel_id` e `status_visualizacao` (POST/PATCH `/negocios`). Sem `responsavel_id` na criação, o responsável é o próprio Admin; sem status, 'Privado'. Trocar um não altera o outro. Responsável de outra empresa ou inexistente → 400.
+- Respostas de negócio para Admin trazem `responsavel_id`, `status_visualizacao` e `responsavel: { usuario_id, nome }`. Listagem aceita `?responsavel_id=` e `?status_visualizacao=`.
+- `GET /usuarios/responsaveis` (Admin): usuários da empresa para o seletor (`usuario_id`, `nome`, `sobrenome`, `nivel_acesso`).
+- **Normal** só enxerga negócios 'Publico' em que é o responsável:
+  - `GET /negocios/minhas-pesagens`: negócio, data, fazenda, pecuarista, modalidade, tipo de gado, `qtd_animais`, `gados_pesados`.
+  - `GET /negocios/:id/pesagem`: lotes (sem preço) e cabeças (peso e horário).
+  - `POST /gados` e `PATCH /negocios/:id/concluir` nesses negócios (resposta sem valores).
+  - Fora disso: 404. Rotas de cadastro (`/negocios` completo, `/lotes`, `/compradores`, `/pecuaristas`, `/fazendas`, `/tipos-gado`, `/uploads`, editar/excluir `/gados`) → 403.
+- Excluir um usuário que é responsável por negócios → 409 (trocar o responsável antes).
+- Na fila offline, uma pesagem recusada com 403/404 (responsável trocado ou negócio 'Privado') fica com erro "sem permissão", sem reenvio automático.

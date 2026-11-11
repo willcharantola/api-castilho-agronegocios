@@ -6,6 +6,7 @@ import {
   MENSAGEM_COMPRADOR_E_VENDEDOR,
   MENSAGEM_COMPRADOR_NAO_ENCONTRADO,
   MENSAGEM_FAZENDA_DE_OUTRO_PECUARISTA,
+  MENSAGEM_RESPONSAVEL_INVALIDO,
   MENSAGEM_TROCA_PARA_CABECA,
   NegociosService,
 } from './negocios.service';
@@ -23,11 +24,27 @@ const DTO = {
 
 const dec = (valor: number) => new Prisma.Decimal(valor);
 
+/** Admin autenticado que cadastra (responsável padrão). */
+const AUTOR_ID = 5;
+
 function criarServico(
   vinculoExiste: boolean,
-  { compradorExiste = true }: { compradorExiste?: boolean } = {},
+  {
+    compradorExiste = true,
+    usuarios = { 5: 1, 6: 1, 7: 2 },
+  }: { compradorExiste?: boolean; usuarios?: Record<number, number> } = {},
 ) {
   const prisma = {
+    // usuario_id → empresa_id
+    usuario: {
+      findUnique: jest.fn(({ where }) =>
+        Promise.resolve(
+          usuarios[where.usuario_id] !== undefined
+            ? { empresa_id: usuarios[where.usuario_id] }
+            : null,
+        ),
+      ),
+    },
     comprador: {
       findUnique: jest.fn().mockResolvedValue(compradorExiste ? {} : null),
     },
@@ -45,7 +62,9 @@ function criarServico(
     },
     negocio: {
       findUnique: jest.fn().mockResolvedValue(null),
-      create: jest.fn(({ data }) => Promise.resolve({ negocio_id: 9, ...data })),
+      create: jest.fn(({ data }) =>
+        Promise.resolve({ negocio_id: 9, ...data }),
+      ),
     },
   };
   return {
@@ -57,7 +76,7 @@ function criarServico(
 describe('NegociosService.create', () => {
   it('fazenda que não pertence ao pecuarista → 400, sem gravar', async () => {
     const { prisma, servico } = criarServico(false);
-    const erro = servico.create(DTO);
+    const erro = servico.create(DTO, AUTOR_ID);
     await expect(erro).rejects.toBeInstanceOf(BadRequestException);
     await expect(erro).rejects.toThrow(MENSAGEM_FAZENDA_DE_OUTRO_PECUARISTA);
     expect(prisma.negocio.create).not.toHaveBeenCalled();
@@ -65,7 +84,7 @@ describe('NegociosService.create', () => {
 
   it('grava alíquotas da empresa, impostos 0,00 e agregados NOT NULL em 0', async () => {
     const { prisma, servico } = criarServico(true);
-    await servico.create(DTO);
+    await servico.create(DTO, AUTOR_ID);
     expect(prisma.negocio.create.mock.calls[0][0].data).toMatchObject({
       aliquota_funrural: 1.5,
       aliquota_senar: 0.2,
@@ -75,20 +94,28 @@ describe('NegociosService.create', () => {
       valor_total_liquido: 0,
       qtd_animais: 0,
     });
-    expect(prisma.negocio.create.mock.calls[0][0].data).not.toHaveProperty('valor_unidade');
+    expect(prisma.negocio.create.mock.calls[0][0].data).not.toHaveProperty(
+      'valor_unidade',
+    );
   });
 
   it('frigorífico como comprador grava só comprador_id', async () => {
     const { prisma, servico } = criarServico(true);
-    await servico.create(DTO);
+    await servico.create(DTO, AUTOR_ID);
     const data = prisma.negocio.create.mock.calls[0][0].data;
-    expect(data).toMatchObject({ comprador_id: 4, comprador_pecuarista_id: null });
+    expect(data).toMatchObject({
+      comprador_id: 4,
+      comprador_pecuarista_id: null,
+    });
     expect(data).not.toHaveProperty('comprador');
   });
 
   it('pecuarista como comprador grava só comprador_pecuarista_id', async () => {
     const { prisma, servico } = criarServico(true);
-    await servico.create({ ...DTO, comprador: { tipo: 'pecuarista', id: 8 } });
+    await servico.create(
+      { ...DTO, comprador: { tipo: 'pecuarista', id: 8 } },
+      AUTOR_ID,
+    );
     expect(prisma.negocio.create.mock.calls[0][0].data).toMatchObject({
       comprador_id: null,
       comprador_pecuarista_id: 8,
@@ -98,14 +125,49 @@ describe('NegociosService.create', () => {
   it('o próprio vendedor como comprador → 400, sem gravar', async () => {
     const { prisma, servico } = criarServico(true);
     await expect(
-      servico.create({ ...DTO, comprador: { tipo: 'pecuarista', id: 3 } }),
+      servico.create(
+        { ...DTO, comprador: { tipo: 'pecuarista', id: 3 } },
+        AUTOR_ID,
+      ),
     ).rejects.toThrow(MENSAGEM_COMPRADOR_E_VENDEDOR);
+    expect(prisma.negocio.create).not.toHaveBeenCalled();
+  });
+
+  it('sem responsável nem status: o autor é o responsável e o negócio nasce Privado', async () => {
+    const { prisma, servico } = criarServico(true);
+    await servico.create(DTO, AUTOR_ID);
+    expect(prisma.negocio.create.mock.calls[0][0].data).toMatchObject({
+      responsavel_id: AUTOR_ID,
+      status_visualizacao: 'Privado',
+    });
+  });
+
+  it('grava o responsável e o status informados', async () => {
+    const { prisma, servico } = criarServico(true);
+    await servico.create(
+      { ...DTO, responsavel_id: 6, status_visualizacao: 'Publico' },
+      AUTOR_ID,
+    );
+    expect(prisma.negocio.create.mock.calls[0][0].data).toMatchObject({
+      responsavel_id: 6,
+      status_visualizacao: 'Publico',
+    });
+  });
+
+  it.each([
+    ['de outra empresa', 7],
+    ['inexistente', 99],
+  ])('responsável %s → 400, sem gravar', async (_caso, responsavelId) => {
+    const { prisma, servico } = criarServico(true);
+    await expect(
+      servico.create({ ...DTO, responsavel_id: responsavelId }, AUTOR_ID),
+    ).rejects.toThrow(MENSAGEM_RESPONSAVEL_INVALIDO);
     expect(prisma.negocio.create).not.toHaveBeenCalled();
   });
 
   it('comprador inexistente → 400', async () => {
     const { servico } = criarServico(true, { compradorExiste: false });
-    await expect(servico.create(DTO)).rejects.toThrow(
+    await expect(servico.create(DTO, AUTOR_ID)).rejects.toThrow(
       MENSAGEM_COMPRADOR_NAO_ENCONTRADO,
     );
   });
@@ -146,47 +208,94 @@ function bancoEmMemoria(modalidade: string, tipoGado = 'Reposicao') {
     aliquota_senar: dec(0.2),
   };
   const lotes: Record<string, any>[] = [
-    { lote_id: 10, negocio_id: 1, rendimento_carcaca: dec(50), valor_unidade: dec(300), qtd_animais: 0 },
-    { lote_id: 20, negocio_id: 1, rendimento_carcaca: dec(60), valor_unidade: dec(300), qtd_animais: 0 },
+    {
+      lote_id: 10,
+      negocio_id: 1,
+      rendimento_carcaca: dec(50),
+      valor_unidade: dec(300),
+      qtd_animais: 0,
+    },
+    {
+      lote_id: 20,
+      negocio_id: 1,
+      rendimento_carcaca: dec(60),
+      valor_unidade: dec(300),
+      qtd_animais: 0,
+    },
   ];
   const gados: GadoMem[] = [
     // lote 10: 600 kg × 50% = 300 kg → 20 @ × 300 = 6.000,00
-    { gado_id: 1, lote_id: 10, peso_total: dec(600), peso_calculo: dec(300), peso_arroba: dec(20), valor_total: dec(6000) },
+    {
+      gado_id: 1,
+      lote_id: 10,
+      peso_total: dec(600),
+      peso_calculo: dec(300),
+      peso_arroba: dec(20),
+      valor_total: dec(6000),
+    },
     // lote 20: 450 kg × 60% = 270 kg → 18 @ × 300 = 5.400,00
-    { gado_id: 2, lote_id: 20, peso_total: dec(450), peso_calculo: dec(270), peso_arroba: dec(18), valor_total: dec(5400) },
+    {
+      gado_id: 2,
+      lote_id: 20,
+      peso_total: dec(450),
+      peso_calculo: dec(270),
+      peso_arroba: dec(18),
+      valor_total: dec(5400),
+    },
   ];
   const doLote = (loteId: number) => gados.filter((g) => g.lote_id === loteId);
 
   const tx = {
     negocio: {
       findUniqueOrThrow: jest.fn(async () => negocio),
-      update: jest.fn(async ({ data }) => Object.assign(negocio, comDecimais(data))),
+      update: jest.fn(async ({ data }) =>
+        Object.assign(negocio, comDecimais(data)),
+      ),
     },
     empresa: { findUniqueOrThrow: jest.fn() },
     lote: {
-      findMany: jest.fn(async () => lotes.map((l) => ({ ...l, gados: doLote(l.lote_id) }))),
+      findMany: jest.fn(async () =>
+        lotes.map((l) => ({ ...l, gados: doLote(l.lote_id) })),
+      ),
       findUniqueOrThrow: jest.fn(async ({ where }) => {
         const lote = lotes.find((l) => l.lote_id === where.lote_id)!;
-        return { ...lote, negocio: {
+        return {
+          ...lote,
+          negocio: {
             modalidade: negocio.modalidade,
             tipo_gado: negocio.tipo_gado,
-          }, gados: doLote(lote.lote_id) };
+          },
+          gados: doLote(lote.lote_id),
+        };
       }),
       update: jest.fn(async ({ where, data }) =>
-        Object.assign(lotes.find((l) => l.lote_id === where.lote_id)!, comDecimais(data)),
+        Object.assign(
+          lotes.find((l) => l.lote_id === where.lote_id)!,
+          comDecimais(data),
+        ),
       ),
     },
     gado: {
       update: jest.fn(async ({ where, data }) =>
-        Object.assign(gados.find((g) => g.gado_id === where.gado_id)!, comDecimais(data)),
+        Object.assign(
+          gados.find((g) => g.gado_id === where.gado_id)!,
+          comDecimais(data),
+        ),
       ),
     },
   };
   const servico = new NegociosService({} as PrismaService);
-  return { servico, tx: tx as unknown as Prisma.TransactionClient, negocio, lotes, gados };
+  return {
+    servico,
+    tx: tx as unknown as Prisma.TransactionClient,
+    negocio,
+    lotes,
+    gados,
+  };
 }
 
-const num = (valor: unknown) => (valor as Prisma.Decimal | null)?.toNumber() ?? null;
+const num = (valor: unknown) =>
+  (valor as Prisma.Decimal | null)?.toNumber() ?? null;
 
 describe('NegociosService.recalcular', () => {
   it('agrega cada lote e o negócio (rendimento ponderado, impostos e comissão)', async () => {
@@ -374,11 +483,17 @@ describe('NegociosService.update — troca de modalidade', () => {
       },
       $transaction: jest.fn(),
     };
-    return { prisma, servico: new NegociosService(prisma as unknown as PrismaService) };
+    return {
+      prisma,
+      servico: new NegociosService(prisma as unknown as PrismaService),
+    };
   }
 
   it('para "cabeca" com mais de um lote → 400', async () => {
-    const { prisma, servico } = servicoComNegocio([{ gados: [] }, { gados: [] }]);
+    const { prisma, servico } = servicoComNegocio([
+      { gados: [] },
+      { gados: [] },
+    ]);
     await expect(servico.update(1, { modalidade: 'cabeca' })).rejects.toThrow(
       MENSAGEM_TROCA_PARA_CABECA,
     );
@@ -387,9 +502,9 @@ describe('NegociosService.update — troca de modalidade', () => {
 
   it('para "cabeca" com cabeças pesadas → 400', async () => {
     const { servico } = servicoComNegocio([{ gados: [{}] }]);
-    await expect(servico.update(1, { modalidade: 'cabeca' })).rejects.toBeInstanceOf(
-      BadRequestException,
-    );
+    await expect(
+      servico.update(1, { modalidade: 'cabeca' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 });
 
@@ -408,7 +523,10 @@ describe('NegociosService.resumo', () => {
   it('Admin recebe as três métricas do período', async () => {
     const { servico, aggregate } = servicoComAgregado();
     await expect(
-      servico.resumo(true, undefined, '2026-11-01', '2026-11-30'),
+      servico.resumo(true, {
+        data_inicio: '2026-11-01',
+        data_fim: '2026-11-30',
+      }),
     ).resolves.toEqual({
       negocios_realizados: 3,
       comissao_total: 1234.5,
@@ -523,7 +641,10 @@ describe('NegociosService.update — troca do modo da comissão', () => {
 
   it('um valor novo enviado junto com a troca é gravado', async () => {
     const { servico, gravado } = servicoGordoArroba();
-    await servico.update(1, { tipo_gado: 'Reposicao', porcentagem_comissao: 1.5 });
+    await servico.update(1, {
+      tipo_gado: 'Reposicao',
+      porcentagem_comissao: 1.5,
+    });
     expect(gravado()).toMatchObject({ porcentagem_comissao: 1.5 });
   });
 });

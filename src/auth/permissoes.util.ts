@@ -1,4 +1,5 @@
 import type { AuthenticatedUser } from './interfaces/authenticated-user.interface';
+import { STATUS_PUBLICO } from '../common/dominio';
 
 /** Perfis do JWT (`nivel_acesso`). */
 export const NIVEL_ADMIN = 'Admin';
@@ -55,4 +56,29 @@ export function semCamposDeComissao<T extends object>(
   const copia = { ...dto } as Record<string, unknown>;
   for (const campo of CAMPOS_DE_COMISSAO) delete copia[campo];
   return copia as T;
+}
+
+/** O que a regra de acesso precisa saber do negócio. */
+export type NegocioParaAcesso = {
+  empresa_id: number;
+  responsavel_id: number;
+  status_visualizacao: string;
+};
+
+/**
+ * Regra única de acesso a um negócio (e aos lotes e gados dele):
+ * - Admin: qualquer negócio da própria empresa;
+ * - Normal: só o negócio da própria empresa em que é o responsável **e** que está 'Publico'.
+ * Quem chama responde 404 quando é `false`, para não revelar que o negócio existe.
+ */
+export function podeAcessarNegocio(
+  usuario: Pick<AuthenticatedUser, 'id' | 'empresa_id' | 'nivel_acesso'>,
+  negocio: NegocioParaAcesso,
+): boolean {
+  if (negocio.empresa_id !== usuario.empresa_id) return false;
+  if (ehAdmin(usuario)) return true;
+  return (
+    negocio.responsavel_id === usuario.id &&
+    negocio.status_visualizacao === STATUS_PUBLICO
+  );
 }
