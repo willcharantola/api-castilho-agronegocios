@@ -14,7 +14,12 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator';
-import { MODALIDADES, TIPOS_GADO, TIPOS_NEGOCIO } from '../../common/dominio';
+import {
+  MODALIDADES,
+  STATUS_VISUALIZACAO,
+  TIPOS_GADO,
+  TIPOS_NEGOCIO,
+} from '../../common/dominio';
 import { CompradorDoNegocioDto } from './comprador-do-negocio.dto';
 
 export class CreateNegocioDto {
@@ -86,6 +91,27 @@ export class CreateNegocioDto {
   @IsString()
   @MaxLength(100)
   observacao?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Usuário responsável (somente Admin define). Da mesma empresa; pode ser Normal ou ' +
+      'Admin. Sem informar, na criação é o próprio Admin que cadastra. Trocar o status de ' +
+      'visualização não altera o responsável.',
+  })
+  @IsOptional()
+  @IsInt()
+  responsavel_id?: number;
+
+  @ApiPropertyOptional({
+    enum: STATUS_VISUALIZACAO,
+    default: 'Privado',
+    description:
+      '"Publico": o responsável (usuário Normal) enxerga o negócio e registra a pesagem. ' +
+      '"Privado": só Admin enxerga. Padrão na criação: "Privado".',
+  })
+  @IsOptional()
+  @IsIn(STATUS_VISUALIZACAO)
+  status_visualizacao?: string;
 
   // Tipo de lote, preço (valor_unidade), carimbo e rendimento pertencem ao lote
   // (POST /negocios/:id/lotes): enviados aqui, o forbidNonWhitelisted responde 400.

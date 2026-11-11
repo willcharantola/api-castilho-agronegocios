@@ -11,6 +11,7 @@ import {
   Query,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiQuery, ApiTags } from '@nestjs/swagger';
+import { Roles } from '../auth/decorators/roles.decorator';
 import { ehLinkCurto, expandirLinkMapa } from '../common/localizacao.util';
 import { CreateFazendaDto } from './dto/create-fazenda.dto';
 import { UpdateFazendaDto } from './dto/update-fazenda.dto';
@@ -18,6 +19,8 @@ import { FazendasService } from './fazendas.service';
 
 @ApiTags('fazendas')
 @ApiBearerAuth()
+// Cadastros: somente Admin (o usuário Normal só acessa as rotas de pesagem).
+@Roles('Admin')
 @Controller('fazendas')
 export class FazendasController {
   constructor(private readonly fazendasService: FazendasService) {}

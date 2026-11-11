@@ -3,6 +3,8 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import type { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
+import { podeAcessarNegocio } from '../auth/permissoes.util';
 import { handlePrismaError } from '../common/prisma-error.util';
 import { criarIdempotente } from '../common/idempotencia.util';
 import { horaAtual, horaParaDate } from '../common/time.util';
@@ -23,6 +25,8 @@ const SELECT_LOTE_CALCULO = {
   negocio: {
     select: {
       empresa_id: true,
+      responsavel_id: true,
+      status_visualizacao: true,
       modalidade: true,
       tipo_gado: true,
     },
@@ -37,15 +41,17 @@ export class GadosService {
   ) {}
 
   /**
-   * Lote que recebe a cabeça: precisa existir, ser de um negócio da empresa do usuário e
-   * de uma modalidade com pesagem ("cabeca" não tem registros individuais de gado).
+   * Lote que recebe a cabeça: precisa existir, ser de um negócio que o usuário pode acessar
+   * (o negócio é resolvido aqui pelo lote, nunca pelo que o cliente envia; ver
+   * podeAcessarNegocio) e de uma modalidade com pesagem ("cabeca" não tem registros
+   * individuais de gado). Sem acesso, 404.
    */
-  private async loteParaPesagem(loteId: number, empresaId: number) {
+  private async loteParaPesagem(loteId: number, usuario: AuthenticatedUser) {
     const lote = await this.prisma.lote.findUnique({
       where: { lote_id: loteId },
       select: SELECT_LOTE_CALCULO,
     });
-    if (!lote || lote.negocio.empresa_id !== empresaId) {
+    if (!lote || !podeAcessarNegocio(usuario, lote.negocio)) {
       throw new NotFoundException(`Lote ${loteId} não encontrado`);
     }
     if (lote.negocio.modalidade === 'cabeca') {
@@ -69,8 +75,10 @@ export class GadosService {
     );
   }
 
-  async create(dto: CreateGadoDto, empresaId: number, fuso?: string) {
-    const lote = await this.loteParaPesagem(dto.lote_id, empresaId);
+  async create(dto: CreateGadoDto, usuario: AuthenticatedUser, fuso?: string) {
+    // Também na sincronização offline: se o Admin trocou o responsável ou passou o negócio
+    // para 'Privado' desde a pesagem, o envio é recusado (404).
+    const lote = await this.loteParaPesagem(dto.lote_id, usuario);
 
     // Online: hora local do cliente no momento do cadastro (instante do servidor, fuso do
     // cliente). Fila offline (uuid_origem): a hora capturada no aparelho na pesagem, já
@@ -128,17 +136,15 @@ export class GadosService {
     return gado;
   }
 
-  async update(gadoId: number, dto: UpdateGadoDto, empresaId: number) {
-    const { lote: loteAtual, ...atual } = await this.findOne(
-      gadoId,
-      empresaId,
-    );
+  async update(gadoId: number, dto: UpdateGadoDto, usuario: AuthenticatedUser) {
+    const empresaId = usuario.empresa_id;
+    const { lote: loteAtual, ...atual } = await this.findOne(gadoId, empresaId);
 
     // Trocar de lote troca o rendimento e o preço usados no cálculo; o lote
     // novo precisa ser do mesmo negócio.
     const loteDestino =
       dto.lote_id !== undefined && dto.lote_id !== atual.lote_id
-        ? await this.loteParaPesagem(dto.lote_id, empresaId)
+        ? await this.loteParaPesagem(dto.lote_id, usuario)
         : loteAtual;
     if (loteDestino.negocio_id !== loteAtual.negocio_id) {
       throw new BadRequestException(MENSAGEM_LOTE_DE_OUTRO_NEGOCIO);

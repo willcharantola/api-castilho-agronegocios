@@ -98,14 +98,15 @@ model empresa {
 }
 
 model usuario {
-  usuario_id   Int     @id @default(autoincrement())
-  empresa_id   Int
-  nome         String  @db.VarChar(50)
-  sobrenome    String  @db.VarChar(50)
-  nivel_acesso String  @db.VarChar(10)
-  email        String  @unique @db.VarChar(254)
-  senha        String  @db.VarChar(255)
-  empresa      empresa @relation(fields: [empresa_id], references: [empresa_id], onDelete: NoAction, onUpdate: NoAction)
+  usuario_id           Int       @id @default(autoincrement())
+  empresa_id           Int
+  nome                 String    @db.VarChar(50)
+  sobrenome            String    @db.VarChar(50)
+  nivel_acesso         String    @db.VarChar(10)
+  email                String    @unique @db.VarChar(254)
+  senha                String    @db.VarChar(255)
+  empresa              empresa   @relation(fields: [empresa_id], references: [empresa_id], onDelete: NoAction, onUpdate: NoAction)
+  negocios_responsavel negocio[] @relation("negocio_responsavel")
 
   @@map("usuario")
 }
@@ -185,17 +186,23 @@ model negocio {
   aliquota_funrural       Decimal?           @db.Decimal(5, 2)
   aliquota_senar          Decimal?           @db.Decimal(5, 2)
   uuid_origem             String?            @unique @db.Uuid
+  /// Usuário responsável (Admin escolhe; padrão: quem cadastrou). Trocar o status não o altera.
+  responsavel_id          Int
+  /// 'Publico': o responsável (Normal) enxerga e pesa; 'Privado': só Admin (CHECK no banco).
+  status_visualizacao     String             @default("Privado") @db.VarChar(7)
   lotes                   lote[]
   comprador               comprador?         @relation(fields: [comprador_id], references: [comprador_id], onDelete: NoAction, onUpdate: NoAction)
   comprador_pecuarista    pecuarista?        @relation("negocio_comprador_pecuarista", fields: [comprador_pecuarista_id], references: [pecuarista_id], onDelete: NoAction, onUpdate: NoAction)
   empresa                 empresa            @relation(fields: [empresa_id], references: [empresa_id], onDelete: NoAction, onUpdate: NoAction)
   fazenda                 fazenda            @relation(fields: [fazenda_id], references: [fazenda_id], onDelete: NoAction, onUpdate: NoAction)
   pecuarista              pecuarista         @relation("negocio_vendedor", fields: [pecuarista_id], references: [pecuarista_id], onDelete: NoAction, onUpdate: NoAction)
+  responsavel             usuario            @relation("negocio_responsavel", fields: [responsavel_id], references: [usuario_id], onDelete: NoAction, onUpdate: NoAction)
   // FK composta: a fazenda do negócio precisa estar vinculada ao pecuarista do negócio.
   pecuarista_fazenda      pecuarista_fazenda @relation(fields: [pecuarista_id, fazenda_id], references: [pecuarista_id, fazenda_id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([empresa_id], map: "idx_negocio_empresa")
   @@index([data_negocio], map: "idx_negocio_data")
+  @@index([responsavel_id, status_visualizacao], map: "idx_negocio_responsavel")
   @@map("negocio")
 }
 

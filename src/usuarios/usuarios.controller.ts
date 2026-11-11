@@ -45,6 +45,17 @@ export class UsuariosController {
     return this.usuariosService.findAll(admin);
   }
 
+  @ApiOperation({
+    summary: 'Usuários que podem ser responsáveis por um negócio',
+    description:
+      'Usuários da empresa (Normal e Admin) para o seletor "Usuário responsável", ' +
+      'ordenados por nome: id, nome e nível de acesso.',
+  })
+  @Get('responsaveis')
+  responsaveis(@CurrentUser() admin: AuthenticatedUser) {
+    return this.usuariosService.responsaveis(admin);
+  }
+
   @ApiOperation({ summary: 'Dados de um usuário da empresa' })
   @Get(':id')
   findOne(
@@ -71,7 +82,8 @@ export class UsuariosController {
   @ApiOperation({
     summary: 'Excluir usuário (definitivo)',
     description:
-      'Não permite excluir a própria conta nem o último administrador da empresa.',
+      'Não permite excluir a própria conta, o último administrador da empresa nem quem ' +
+      'é responsável por negócios (409: reatribua os negócios antes).',
   })
   @Delete(':id')
   remove(

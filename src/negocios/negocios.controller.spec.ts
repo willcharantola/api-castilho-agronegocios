@@ -21,7 +21,11 @@ const NEGOCIO = {
   porcentagem_comissao: 5,
 };
 // Sem as relações do comprador carregadas, `comprador` sai null (ver comCompradorUnificado).
-const NEGOCIO_ADMIN = { ...NEGOCIO, modo_comissao: 'por_arroba', comprador: null };
+const NEGOCIO_ADMIN = {
+  ...NEGOCIO,
+  modo_comissao: 'por_arroba',
+  comprador: null,
+};
 
 function criarController() {
   const service = {
@@ -39,14 +43,15 @@ function criarController() {
 }
 
 describe('NegociosController — comissão por perfil', () => {
-  it('Normal recebe comissão null na listagem, detalhe, criação, edição e conclusão', async () => {
+  // As rotas de negócio completo são @Roles('Admin'); a filtragem da comissão continua como
+  // segunda barreira caso uma delas volte a ser liberada.
+  it('sem perfil Admin a comissão sai null na listagem, detalhe, criação e edição', async () => {
     const { controller } = criarController();
     const respostas = [
       ...(await controller.findAll(NORMAL, {})),
       await controller.findOne(NORMAL, 7),
       await controller.create(NORMAL, {} as CreateNegocioDto),
       await controller.update(NORMAL, 7, {}),
-      await controller.concluir(NORMAL, 7, {}),
     ];
     for (const resposta of respostas) {
       expect(resposta).toMatchObject({
@@ -77,7 +82,7 @@ describe('NegociosController — comissão por perfil', () => {
       porcentagem_comissao: 5,
     } as CreateNegocioDto);
     await controller.update(NORMAL, 7, { porcentagem_comissao: 9 });
-    expect(service.create).toHaveBeenCalledWith({ observacao: 'a' });
+    expect(service.create).toHaveBeenCalledWith({ observacao: 'a' }, NORMAL.id);
     expect(service.update).toHaveBeenCalledWith(7, {});
   });
 
@@ -93,20 +98,42 @@ describe('NegociosController — comissão por perfil', () => {
     const { controller, service } = criarController();
     await controller.resumo(NORMAL, {});
     await controller.resumo(ADMIN, { data_inicio: '2026-11-01' });
-    expect(service.resumo).toHaveBeenNthCalledWith(
-      1,
-      false,
-      undefined,
+    expect(service.resumo).toHaveBeenNthCalledWith(1, false, {});
+    expect(service.resumo).toHaveBeenNthCalledWith(2, true, {
+      data_inicio: '2026-11-01',
+    });
+  });
+
+  it('conclusão pelo Normal devolve só os horários da pesagem', async () => {
+    const { controller, service } = criarController();
+    service.concluir.mockResolvedValueOnce({
+      ...NEGOCIO,
+      valor_total_bruto: 1000,
+      hora_inicio_pesagem: 'inicio',
+      hora_fim_pesagem: 'fim',
+    });
+    await expect(controller.concluir(NORMAL, 7, {})).resolves.toEqual({
+      negocio_id: 7,
+      hora_inicio_pesagem: 'inicio',
+      hora_fim_pesagem: 'fim',
+    });
+    expect(service.concluir).toHaveBeenCalledWith(
+      7,
+      NORMAL,
       undefined,
       undefined,
     );
-    expect(service.resumo).toHaveBeenNthCalledWith(
-      2,
-      true,
-      undefined,
-      '2026-11-01',
-      undefined,
-    );
+  });
+
+  it('responsável sai com id e nome completo', async () => {
+    const { controller, service } = criarController();
+    service.findOne.mockResolvedValueOnce({
+      ...NEGOCIO,
+      responsavel: { usuario_id: 4, nome: 'Juliana', sobrenome: 'Souza' },
+    });
+    expect(await controller.findOne(ADMIN, 7)).toMatchObject({
+      responsavel: { usuario_id: 4, nome: 'Juliana Souza' },
+    });
   });
 });
 

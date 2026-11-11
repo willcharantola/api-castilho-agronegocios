@@ -1,5 +1,6 @@
 import { Body, Controller, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiCreatedResponse, ApiTags } from '@nestjs/swagger';
+import { Roles } from '../auth/decorators/roles.decorator';
 import {
   CreateUploadMarcaDto,
   UploadMarcaResponseDto,
@@ -9,6 +10,8 @@ import { UploadsService } from './uploads.service';
 // Protegido pelo JwtAuthGuard global (não é @Public()).
 @ApiTags('uploads')
 @ApiBearerAuth()
+// Cadastros: somente Admin (o usuário Normal só acessa as rotas de pesagem).
+@Roles('Admin')
 @Controller('uploads')
 export class UploadsController {
   constructor(private readonly uploads: UploadsService) {}
