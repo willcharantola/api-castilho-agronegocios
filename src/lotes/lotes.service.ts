@@ -5,6 +5,8 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { type lote } from '@prisma/client';
+import type { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
+import { podeAcessarNegocio } from '../auth/permissoes.util';
 import { NOME_LOTE_UNICO, RENDIMENTO_NEUTRO } from '../common/dominio';
 import { criarIdempotente } from '../common/idempotencia.util';
 import { handlePrismaError } from '../common/prisma-error.util';
@@ -34,10 +36,14 @@ export class LotesService {
     private readonly negociosService: NegociosService,
   ) {}
 
-  async create(negocioId: number, dto: CreateLoteDto, empresaId: number) {
-    const negocio = await this.negociosService.negocioDaEmpresa(
+  async create(
+    negocioId: number,
+    dto: CreateLoteDto,
+    usuario: AuthenticatedUser,
+  ) {
+    const negocio = await this.negociosService.negocioParaAlterar(
       negocioId,
-      empresaId,
+      usuario,
     );
     const { registro } = await criarIdempotente(
       dto.uuid_origem,
@@ -76,8 +82,8 @@ export class LotesService {
     return registro;
   }
 
-  async findDoNegocio(negocioId: number, empresaId: number) {
-    await this.negociosService.negocioDaEmpresa(negocioId, empresaId);
+  async findDoNegocio(negocioId: number, usuario: AuthenticatedUser) {
+    await this.negociosService.negocioParaAlterar(negocioId, usuario);
     return this.prisma.lote.findMany({
       where: { negocio_id: negocioId },
       orderBy: { lote_id: 'asc' },
@@ -85,22 +91,30 @@ export class LotesService {
     });
   }
 
-  async findOne(loteId: number, empresaId: number) {
+  /** Lote de um negócio que o usuário pode acessar (o negócio é resolvido pelo lote); senão 404. */
+  async findOne(loteId: number, usuario: AuthenticatedUser) {
     const lote = await this.prisma.lote.findUnique({
       where: { lote_id: loteId },
       include: {
         gados: { orderBy: { gado_id: 'asc' } },
-        negocio: { select: { empresa_id: true, modalidade: true } },
+        negocio: {
+          select: {
+            empresa_id: true,
+            responsavel_id: true,
+            status_visualizacao: true,
+            modalidade: true,
+          },
+        },
       },
     });
-    if (!lote || lote.negocio.empresa_id !== empresaId) {
+    if (!lote || !podeAcessarNegocio(usuario, lote.negocio)) {
       throw new NotFoundException(`Lote ${loteId} não encontrado`);
     }
     return lote;
   }
 
-  async update(loteId: number, dto: UpdateLoteDto, empresaId: number) {
-    const atual = await this.findOne(loteId, empresaId);
+  async update(loteId: number, dto: UpdateLoteDto, usuario: AuthenticatedUser) {
+    const atual = await this.findOne(loteId, usuario);
     const modalidade = atual.negocio.modalidade;
     const campos = this.camposDaModalidade(modalidade, dto, atual);
     if (
@@ -132,8 +146,8 @@ export class LotesService {
     }
   }
 
-  async remove(loteId: number, empresaId: number) {
-    const atual = await this.findOne(loteId, empresaId);
+  async remove(loteId: number, usuario: AuthenticatedUser) {
+    const atual = await this.findOne(loteId, usuario);
     if (atual.gados.length > 0) {
       throw new ConflictException(mensagemLoteComGados(atual.gados.length));
     }

@@ -16,16 +16,15 @@ import { CreateTipoGadoDto } from './dto/create-tipo-gado.dto';
 import { UpdateTipoGadoDto } from './dto/update-tipo-gado.dto';
 import { TiposGadoService } from './tipos-gado.service';
 
-// Sempre da empresa do usuário (JWT). Tudo restrito a Admin (o Normal não cadastra lotes):
-// listar, cadastrar, renomear e excluir respondem 403 para Normal.
+// Sempre da empresa do usuário (JWT). Qualquer usuário lê (sugestões no cadastro de lote);
+// só Admin cadastra, renomeia e exclui (Normal → 403).
 @ApiTags('tipos-gado')
 @ApiBearerAuth()
 @Controller('tipos-gado')
 export class TiposGadoController {
   constructor(private readonly tiposGadoService: TiposGadoService) {}
 
-  // Sugestões de nome de lote (cadastro de lote, só Admin).
-  @Roles('Admin')
+  // Sugestões de nome de lote (cadastro de lote).
   @Get()
   findAll(@CurrentUser() user: AuthenticatedUser) {
     return this.tiposGadoService.findAll(user.empresa_id);

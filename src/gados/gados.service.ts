@@ -125,20 +125,20 @@ export class GadosService {
     });
   }
 
-  async findOne(gadoId: number, empresaId: number) {
+  /** Cabeça de um negócio que o usuário pode acessar (resolvido pelo lote); senão 404. */
+  async findOne(gadoId: number, usuario: AuthenticatedUser) {
     const gado = await this.prisma.gado.findUnique({
       where: { gado_id: gadoId },
       include: { lote: { select: SELECT_LOTE_CALCULO } },
     });
-    if (!gado || gado.lote.negocio.empresa_id !== empresaId) {
+    if (!gado || !podeAcessarNegocio(usuario, gado.lote.negocio)) {
       throw new NotFoundException(`Gado ${gadoId} não encontrado`);
     }
     return gado;
   }
 
   async update(gadoId: number, dto: UpdateGadoDto, usuario: AuthenticatedUser) {
-    const empresaId = usuario.empresa_id;
-    const { lote: loteAtual, ...atual } = await this.findOne(gadoId, empresaId);
+    const { lote: loteAtual, ...atual } = await this.findOne(gadoId, usuario);
 
     // Trocar de lote troca o rendimento e o preço usados no cálculo; o lote
     // novo precisa ser do mesmo negócio.
@@ -176,8 +176,8 @@ export class GadosService {
     }
   }
 
-  async remove(gadoId: number, empresaId: number) {
-    const { lote, ...atual } = await this.findOne(gadoId, empresaId);
+  async remove(gadoId: number, usuario: AuthenticatedUser) {
+    const { lote, ...atual } = await this.findOne(gadoId, usuario);
     try {
       return await this.prisma.$transaction(async (tx) => {
         const gado = await tx.gado.delete({

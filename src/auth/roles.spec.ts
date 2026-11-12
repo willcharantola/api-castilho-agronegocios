@@ -115,9 +115,18 @@ const metodosDe = (classe: Classe) =>
   );
 
 describe('@Roles — negócios', () => {
-  const somenteAdmin = ['create', 'findAll', 'findOne', 'update', 'remove'];
-  // Rotas de pesagem: a regra por negócio (podeAcessarNegocio) fica no serviço.
-  const liberadas = ['resumo', 'minhasPesagens', 'pesagem', 'concluir'];
+  const somenteAdmin = ['findAll', 'remove'];
+  // Normal cadastra e trabalha nos próprios negócios: a regra por negócio
+  // (podeAcessarNegocio) fica no serviço.
+  const liberadas = [
+    'create',
+    'findOne',
+    'update',
+    'resumo',
+    'minhasPesagens',
+    'pesagem',
+    'concluir',
+  ];
 
   it.each(somenteAdmin)('%s é recusada (403) para Normal', (rota) => {
     expect(permite(NegociosController, rota, 'Normal')).toBe(false);
@@ -135,33 +144,47 @@ describe('@Roles — negócios', () => {
   });
 });
 
-describe('@Roles — gados', () => {
-  it('Normal só lança pesagem (POST)', () => {
-    expect(permite(GadosController, 'create', 'Normal')).toBe(true);
-    for (const rota of ['findAll', 'findOne', 'update', 'remove']) {
-      expect(permite(GadosController, rota, 'Normal')).toBe(false);
-      expect(permite(GadosController, rota, 'Admin')).toBe(true);
+describe('@Roles — lotes e gados', () => {
+  it('Normal usa as rotas (o acesso por negócio é conferido no serviço)', () => {
+    for (const rota of metodosDe(LotesController)) {
+      expect(permite(LotesController, rota, 'Normal')).toBe(true);
     }
+    for (const rota of ['create', 'findOne', 'update', 'remove']) {
+      expect(permite(GadosController, rota, 'Normal')).toBe(true);
+    }
+  });
+
+  it('listagem geral de gados só para Admin', () => {
+    expect(permite(GadosController, 'findAll', 'Normal')).toBe(false);
+    expect(permite(GadosController, 'findAll', 'Admin')).toBe(true);
   });
 });
 
-describe('@Roles — cadastros (somente Admin)', () => {
-  const controllers: [string, Classe][] = [
-    ['lotes', LotesController],
-    ['compradores', CompradoresController],
-    ['pecuaristas', PecuaristasController],
-    ['fazendas', FazendasController],
-    ['tipos-gado', TiposGadoController],
-    ['uploads', UploadsController],
+describe('@Roles — cadastros: Normal consulta e cadastra, só Admin altera e exclui', () => {
+  const casos: [string, Classe, string[]][] = [
+    [
+      'compradores',
+      CompradoresController,
+      ['create', 'findAll', 'opcoes', 'findOne'],
+    ],
+    [
+      'pecuaristas',
+      PecuaristasController,
+      ['create', 'findAll', 'findOne', 'associarFazenda'],
+    ],
+    [
+      'fazendas',
+      FazendasController,
+      ['create', 'findAll', 'expandirMapa', 'findOne'],
+    ],
+    ['tipos-gado', TiposGadoController, ['findAll']],
+    ['uploads', UploadsController, ['gerarUrlMarca']],
   ];
 
-  it.each(controllers)(
-    '/%s: todas as rotas recusadas (403) para Normal',
-    (_nome, classe) => {
-      for (const rota of metodosDe(classe)) {
-        expect(permite(classe, rota, 'Normal')).toBe(false);
-        expect(permite(classe, rota, 'Admin')).toBe(true);
-      }
-    },
-  );
+  it.each(casos)('/%s', (_nome, classe, liberadas) => {
+    for (const rota of metodosDe(classe)) {
+      expect(permite(classe, rota, 'Admin')).toBe(true);
+      expect(permite(classe, rota, 'Normal')).toBe(liberadas.includes(rota));
+    }
+  });
 });

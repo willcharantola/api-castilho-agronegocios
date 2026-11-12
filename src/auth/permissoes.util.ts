@@ -82,3 +82,23 @@ export function podeAcessarNegocio(
     negocio.status_visualizacao === STATUS_PUBLICO
   );
 }
+
+/** Campos de acesso do negócio, que só o Admin define. */
+export const CAMPOS_DE_ACESSO = [
+  'responsavel_id',
+  'status_visualizacao',
+] as const;
+
+/**
+ * Entrada do usuário: para quem não é Admin, responsável e status de visualização enviados
+ * são ignorados em silêncio (na criação, o servidor usa o próprio usuário e 'Publico').
+ */
+export function semCamposDeAcesso<T extends object>(
+  dto: T,
+  user: Pick<AuthenticatedUser, 'nivel_acesso'>,
+): T {
+  if (ehAdmin(user)) return dto;
+  const copia = { ...dto } as Record<string, unknown>;
+  for (const campo of CAMPOS_DE_ACESSO) delete copia[campo];
+  return copia as T;
+}

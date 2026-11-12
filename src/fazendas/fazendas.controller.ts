@@ -19,8 +19,8 @@ import { FazendasService } from './fazendas.service';
 
 @ApiTags('fazendas')
 @ApiBearerAuth()
-// Cadastros: somente Admin (o usuário Normal só acessa as rotas de pesagem).
-@Roles('Admin')
+// Consultar e cadastrar: liberado a todos (o Normal escolhe ou cadastra pecuarista, fazenda
+// e comprador ao cadastrar um negócio). Alterar e excluir: só Admin (Normal → 403).
 @Controller('fazendas')
 export class FazendasController {
   constructor(private readonly fazendasService: FazendasService) {}
@@ -55,11 +55,13 @@ export class FazendasController {
     return this.fazendasService.findOne(id);
   }
 
+  @Roles('Admin')
   @Patch(':id')
   update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateFazendaDto) {
     return this.fazendasService.update(id, dto);
   }
 
+  @Roles('Admin')
   @Delete(':id')
   remove(@Param('id', ParseIntPipe) id: number) {
     return this.fazendasService.remove(id);

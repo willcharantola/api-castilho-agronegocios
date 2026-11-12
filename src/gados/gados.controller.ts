@@ -25,8 +25,9 @@ import { CreateGadoDto } from './dto/create-gado.dto';
 import { UpdateGadoDto } from './dto/update-gado.dto';
 import { GadosService } from './gados.service';
 
-// Normal só lança pesagem (POST) nos negócios 'Publico' sob sua responsabilidade e recebe a
-// cabeça sem valores. Consultar, corrigir e excluir pesagens é do Admin.
+// Admin: cabeças de qualquer negócio da empresa. Normal: só dos negócios 'Publico' sob sua
+// responsabilidade (ex.: os que ele cadastrou); os demais respondem 404. A listagem geral
+// (GET /gados) é só do Admin.
 @ApiTags('gados')
 @ApiBearerAuth()
 @Controller('gados')
@@ -60,17 +61,15 @@ export class GadosController {
     return this.gadosService.findAll(user.empresa_id);
   }
 
-  @Roles('Admin')
   @Get(':id')
   findOne(
     @Param('id', ParseIntPipe) id: number,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.gadosService.findOne(id, user.empresa_id);
+    return this.gadosService.findOne(id, user);
   }
 
   // Trocar lote_id move a cabeça para outro lote do mesmo negócio (recalcula os dois).
-  @Roles('Admin')
   @Patch(':id')
   update(
     @Param('id', ParseIntPipe) id: number,
@@ -80,12 +79,11 @@ export class GadosController {
     return this.gadosService.update(id, dto, user);
   }
 
-  @Roles('Admin')
   @Delete(':id')
   remove(
     @Param('id', ParseIntPipe) id: number,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.gadosService.remove(id, user.empresa_id);
+    return this.gadosService.remove(id, user);
   }
 }

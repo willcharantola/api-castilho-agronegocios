@@ -318,15 +318,22 @@ export class NegociosService {
   }
 
   /**
-   * Negócio que o usuário pode alterar: o de outra empresa responde 404 (como se não
-   * existisse), para não revelar dados de outras empresas.
+   * Negócio que o usuário pode alterar (ex.: cadastrar lotes): o de outra empresa, ou, para
+   * o Normal, o que não está liberado para ele (podeAcessarNegocio), responde 404 — como se
+   * não existisse.
    */
-  async negocioDaEmpresa(negocioId: number, empresaId: number) {
+  async negocioParaAlterar(negocioId: number, usuario: AuthenticatedUser) {
     const negocio = await this.prisma.negocio.findUnique({
       where: { negocio_id: negocioId },
-      select: { negocio_id: true, empresa_id: true, modalidade: true },
+      select: {
+        negocio_id: true,
+        empresa_id: true,
+        responsavel_id: true,
+        status_visualizacao: true,
+        modalidade: true,
+      },
     });
-    if (!negocio || negocio.empresa_id !== empresaId) {
+    if (!negocio || !podeAcessarNegocio(usuario, negocio)) {
       throw new NotFoundException(`Negócio ${negocioId} não encontrado`);
     }
     return negocio;

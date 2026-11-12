@@ -395,9 +395,12 @@ Banco: aplicar `script-migracao-acesso-por-negocio.sql` (colunas `negocio.respon
 - Respostas de negócio para Admin trazem `responsavel_id`, `status_visualizacao` e `responsavel: { usuario_id, nome }`. Listagem aceita `?responsavel_id=` e `?status_visualizacao=`.
 - `GET /usuarios/responsaveis` (Admin): usuários da empresa para o seletor (`usuario_id`, `nome`, `sobrenome`, `nivel_acesso`).
 - **Normal** só enxerga negócios 'Publico' em que é o responsável:
-  - `GET /negocios/minhas-pesagens`: negócio, data, fazenda, pecuarista, modalidade, tipo de gado, `qtd_animais`, `gados_pesados`.
-  - `GET /negocios/:id/pesagem`: lotes (sem preço) e cabeças (peso e horário).
-  - `POST /gados` e `PATCH /negocios/:id/concluir` nesses negócios (resposta sem valores).
-  - Fora disso: 404. Rotas de cadastro (`/negocios` completo, `/lotes`, `/compradores`, `/pecuaristas`, `/fazendas`, `/tipos-gado`, `/uploads`, editar/excluir `/gados`) → 403.
+  - `POST /negocios`: pode cadastrar; o negócio nasce com ele como responsável e 'Publico' (o que ele enviar em `responsavel_id`/`status_visualizacao` é ignorado, assim como a comissão).
+  - `GET`/`PATCH /negocios/:id`, lotes (`/negocios/:id/lotes`, `/lotes/:id`) e cabeças (`/gados`, `/gados/:id`) desses negócios; comissão sempre `null`.
+  - `GET /negocios/minhas-pesagens`: lista dos negócios dele (negócio, data, fazenda, pecuarista, modalidade, tipo de gado, `qtd_animais`, `gados_pesados`).
+  - `GET /negocios/:id/pesagem`: lotes (sem preço) e cabeças (peso e horário), usada na tela de pesagem.
+  - `PATCH /negocios/:id/concluir`.
+  - Consulta (GET) de pecuaristas, fazendas, frigoríficos (inclui `/compradores/opcoes`) e tipos de gado, e cadastro (POST) de pecuarista (com fazendas), fazenda, vínculo de fazenda ao pecuarista (`POST /pecuaristas/:id/fazendas`), frigorífico e imagem da marca (`POST /uploads/marca-fazenda`), para o cadastro do negócio.
+  - Fora disso: negócio de outro responsável ou 'Privado' → 404; `GET /negocios` (listagem completa), `DELETE /negocios/:id`, `GET /gados` alterar/excluir pecuaristas, fazendas e frigoríficos, desvincular fazenda e cadastrar/alterar/excluir tipos de gado → 403.
 - Excluir um usuário que é responsável por negócios → 409 (trocar o responsável antes).
 - Na fila offline, uma pesagem recusada com 403/404 (responsável trocado ou negócio 'Privado') fica com erro "sem permissão", sem reenvio automático.

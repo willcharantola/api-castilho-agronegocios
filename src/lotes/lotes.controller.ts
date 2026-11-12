@@ -9,7 +9,6 @@ import {
   Post,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
 import { CreateLoteDto } from './dto/create-lote.dto';
@@ -18,8 +17,8 @@ import { LotesService } from './lotes.service';
 
 @ApiTags('lotes')
 @ApiBearerAuth()
-// Cadastros: somente Admin (o usuário Normal só acessa as rotas de pesagem).
-@Roles('Admin')
+// Admin: lotes de qualquer negócio da empresa. Normal: só dos negócios 'Publico' sob sua
+// responsabilidade (ex.: os que ele mesmo cadastrou); os demais respondem 404.
 @Controller()
 export class LotesController {
   constructor(private readonly lotesService: LotesService) {}
@@ -36,7 +35,7 @@ export class LotesController {
     @Body() dto: CreateLoteDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.lotesService.create(negocioId, dto, user.empresa_id);
+    return this.lotesService.create(negocioId, dto, user);
   }
 
   @Get('negocios/:negocioId/lotes')
@@ -44,7 +43,7 @@ export class LotesController {
     @Param('negocioId', ParseIntPipe) negocioId: number,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.lotesService.findDoNegocio(negocioId, user.empresa_id);
+    return this.lotesService.findDoNegocio(negocioId, user);
   }
 
   @Get('lotes/:id')
@@ -52,7 +51,7 @@ export class LotesController {
     @Param('id', ParseIntPipe) id: number,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.lotesService.findOne(id, user.empresa_id);
+    return this.lotesService.findOne(id, user);
   }
 
   @ApiOperation({
@@ -65,7 +64,7 @@ export class LotesController {
     @Body() dto: UpdateLoteDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.lotesService.update(id, dto, user.empresa_id);
+    return this.lotesService.update(id, dto, user);
   }
 
   @ApiOperation({ description: '409 se o lote tiver cabeças pesadas.' })
@@ -74,6 +73,6 @@ export class LotesController {
     @Param('id', ParseIntPipe) id: number,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.lotesService.remove(id, user.empresa_id);
+    return this.lotesService.remove(id, user);
   }
 }

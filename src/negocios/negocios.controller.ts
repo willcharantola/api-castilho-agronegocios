@@ -17,7 +17,7 @@ import {
   ApiQuery,
   ApiTags,
 } from '@nestjs/swagger';
-import { STATUS_VISUALIZACAO } from '../common/dominio';
+import { STATUS_PUBLICO, STATUS_VISUALIZACAO } from '../common/dominio';
 import { FUSO_HEADER } from '../common/time.util';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -25,6 +25,7 @@ import type { AuthenticatedUser } from '../auth/interfaces/authenticated-user.in
 import {
   ehAdmin,
   ocultarCamposDeComissao,
+  semCamposDeAcesso,
   semCamposDeComissao,
 } from '../auth/permissoes.util';
 import { comModoComissao } from './calculo.util';
@@ -71,11 +72,12 @@ function apresentar<
 }
 
 // Acesso por perfil (instrucoes-acesso-usuario.md):
-// - Admin cadastra, consulta, edita e exclui negócios, e define o responsável e o status
-//   de visualização ('Publico' | 'Privado').
-// - Normal só enxerga os negócios 'Publico' em que é o responsável, pelas rotas de pesagem
-//   (visão reduzida, sem valores nem comprador), e pode concluir a pesagem deles. As demais
-//   rotas respondem 403; negócio fora do alcance dele, 404.
+// - Admin cadastra, consulta, edita e exclui qualquer negócio da empresa, e define o
+//   responsável e o status de visualização ('Publico' | 'Privado').
+// - Normal cadastra negócios: o negócio nasce com ele como responsável e 'Publico' (o que
+//   ele enviar nesses dois campos é ignorado). Ele consulta e edita só os negócios
+//   'Publico' em que é o responsável (podeAcessarNegocio; os demais, 404) e lista apenas
+//   esses (minhas-pesagens). Listagem completa e exclusão: 403.
 // Comissão (valor, valor informado e modo_comissao) continua restrita a Admin.
 @ApiTags('negocios')
 @ApiBearerAuth()
@@ -83,19 +85,19 @@ function apresentar<
 export class NegociosController {
   constructor(private readonly negociosService: NegociosService) {}
 
-  @Roles('Admin')
   @ApiOperation({
     description:
-      'Sem responsavel_id, o responsável é o Admin autenticado; sem status_visualizacao, ' +
-      'o negócio nasce "Privado".',
+      'Admin: sem responsavel_id, o responsável é ele mesmo; sem status_visualizacao, o ' +
+      'negócio nasce "Privado". Normal: o negócio nasce com ele como responsável e "Publico".',
   })
   @Post()
   async create(
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: CreateNegocioDto,
   ) {
+    const dados = semCamposDeComissao(semCamposDeAcesso(dto, user), user);
     const negocio = await this.negociosService.create(
-      semCamposDeComissao(dto, user),
+      ehAdmin(user) ? dados : { ...dados, status_visualizacao: STATUS_PUBLICO },
       user.id,
     );
     return apresentar(negocio, user);
@@ -162,19 +164,24 @@ export class NegociosController {
     return this.negociosService.pesagem(id, user);
   }
 
-  @Roles('Admin')
+  @ApiOperation({
+    description:
+      'Normal: só negócio "Publico" sob sua responsabilidade (senão 404), sem a comissão.',
+  })
   @Get(':id')
   async findOne(
     @CurrentUser() user: AuthenticatedUser,
     @Param('id', ParseIntPipe) id: number,
   ) {
+    await this.negociosService.negocioAcessivel(id, user);
     return apresentar(await this.negociosService.findOne(id), user);
   }
 
-  @Roles('Admin')
   @ApiOperation({
     description:
-      'responsavel_id e status_visualizacao são independentes: trocar um não altera o outro.',
+      'responsavel_id e status_visualizacao são independentes: trocar um não altera o outro. ' +
+      'Normal: só negócio "Publico" sob sua responsabilidade (senão 404); responsável, ' +
+      'visualização e comissão enviados por ele são ignorados.',
   })
   @Patch(':id')
   async update(
@@ -182,9 +189,10 @@ export class NegociosController {
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateNegocioDto,
   ) {
+    await this.negociosService.negocioAcessivel(id, user);
     const negocio = await this.negociosService.update(
       id,
-      semCamposDeComissao(dto, user),
+      semCamposDeComissao(semCamposDeAcesso(dto, user), user),
     );
     return apresentar(negocio, user);
   }
