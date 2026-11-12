@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import type { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
 import { NegociosService } from '../negocios/negocios.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateLoteDto } from './dto/create-lote.dto';
@@ -8,6 +9,14 @@ import {
   MENSAGEM_SEGUNDO_LOTE_CABECA,
   mensagemLoteComGados,
 } from './lotes.service';
+
+const usuario = (id: number, nivel_acesso: string): AuthenticatedUser => ({
+  id,
+  empresa_id: 1,
+  email: 'x@x.com',
+  nivel_acesso,
+});
+const ADMIN = usuario(1, 'Admin');
 
 const LOTE = {
   nome_lote: 'Bois Nelore',
@@ -23,7 +32,11 @@ const dec = (valor: number) => new Prisma.Decimal(valor);
 
 function criarServico(
   modalidade: string,
-  opcoes: { repetido?: boolean; lotesExistentes?: number; loteAtual?: object } = {},
+  opcoes: {
+    repetido?: boolean;
+    lotesExistentes?: number;
+    loteAtual?: object;
+  } = {},
 ) {
   const tx = {
     lote: {
@@ -44,7 +57,11 @@ function criarServico(
     $transaction: jest.fn((fn: (t: typeof tx) => unknown) => fn(tx)),
   };
   const negocios = {
-    negocioDaEmpresa: jest.fn(async () => ({ negocio_id: 1, empresa_id: 1, modalidade })),
+    negocioParaAlterar: jest.fn(async () => ({
+      negocio_id: 1,
+      empresa_id: 1,
+      modalidade,
+    })),
     recalcular: jest.fn(),
     recalcularGadosDoLote: jest.fn(),
   };
@@ -67,14 +84,19 @@ const loteGravado = (modalidade: string, gados: unknown[] = []) => ({
   valor_unidade: dec(310),
   qtd_animais: gados.length,
   gados,
-  negocio: { empresa_id: 1, modalidade },
+  negocio: {
+    empresa_id: 1,
+    responsavel_id: 5,
+    status_visualizacao: 'Privado',
+    modalidade,
+  },
 });
 
 describe('LotesService.create', () => {
   it('nome repetido no negócio (ignorando maiúsculas) → 400', async () => {
     const { prisma, tx, servico } = criarServico('arroba', { repetido: true });
     await expect(
-      servico.create(1, { ...LOTE, nome_lote: 'BOIS nelore' }, 1),
+      servico.create(1, { ...LOTE, nome_lote: 'BOIS nelore' }, ADMIN),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(prisma.lote.findFirst.mock.calls[0][0].where.nome_lote).toEqual({
       equals: 'BOIS nelore',
@@ -86,20 +108,20 @@ describe('LotesService.create', () => {
   it('arroba sem rendimento → 400', async () => {
     const { servico } = criarServico('arroba');
     await expect(
-      servico.create(1, { ...LOTE, rendimento_carcaca: undefined }, 1),
+      servico.create(1, { ...LOTE, rendimento_carcaca: undefined }, ADMIN),
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('quantidade de animais fora da modalidade "cabeca" → 400', async () => {
     const { servico } = criarServico('kg');
     await expect(
-      servico.create(1, { ...LOTE, qtd_animais: 5 }, 1),
+      servico.create(1, { ...LOTE, qtd_animais: 5 }, ADMIN),
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('kg grava rendimento 100 e recalcula o negócio na mesma transação', async () => {
     const { tx, negocios, servico } = criarServico('kg');
-    await servico.create(1, LOTE, 1);
+    await servico.create(1, LOTE, ADMIN);
     expect(tx.lote.create.mock.calls[0][0].data).toMatchObject({
       rendimento_carcaca: 100,
       qtd_animais: 0,
@@ -111,7 +133,11 @@ describe('LotesService.create', () => {
 
   it('cabeca: "Lote único", rendimento 100 e quantidade informada', async () => {
     const { tx, servico } = criarServico('cabeca');
-    await servico.create(1, { ...LOTE, nome_lote: undefined, qtd_animais: 30 }, 1);
+    await servico.create(
+      1,
+      { ...LOTE, nome_lote: undefined, qtd_animais: 30 },
+      ADMIN,
+    );
     expect(tx.lote.create.mock.calls[0][0].data).toMatchObject({
       nome_lote: 'Lote único',
       rendimento_carcaca: 100,
@@ -121,7 +147,7 @@ describe('LotesService.create', () => {
 
   it('cabeca sem quantidade → 400', async () => {
     const { servico } = criarServico('cabeca');
-    await expect(servico.create(1, LOTE, 1)).rejects.toThrow(
+    await expect(servico.create(1, LOTE, ADMIN)).rejects.toThrow(
       'Informe a quantidade de animais',
     );
   });
@@ -129,7 +155,7 @@ describe('LotesService.create', () => {
   it('cabeca: segundo lote → 400', async () => {
     const { tx, servico } = criarServico('cabeca', { lotesExistentes: 1 });
     await expect(
-      servico.create(1, { ...LOTE, qtd_animais: 3 }, 1),
+      servico.create(1, { ...LOTE, qtd_animais: 3 }, ADMIN),
     ).rejects.toThrow(MENSAGEM_SEGUNDO_LOTE_CABECA);
     expect(tx.lote.create).not.toHaveBeenCalled();
   });
@@ -140,7 +166,7 @@ describe('LotesService.update', () => {
     const { tx, negocios, servico } = criarServico('arroba', {
       loteAtual: loteGravado('arroba'),
     });
-    await servico.update(7, { rendimento_carcaca: 55 }, 1);
+    await servico.update(7, { rendimento_carcaca: 55 }, ADMIN);
     expect(negocios.recalcularGadosDoLote).toHaveBeenCalledWith(tx, 7);
     expect(negocios.recalcular).toHaveBeenCalledWith(tx, 1);
   });
@@ -149,7 +175,7 @@ describe('LotesService.update', () => {
     const { tx, negocios, servico } = criarServico('arroba', {
       loteAtual: loteGravado('arroba'),
     });
-    await servico.update(7, { valor_unidade: 320 }, 1);
+    await servico.update(7, { valor_unidade: 320 }, ADMIN);
     expect(negocios.recalcularGadosDoLote).toHaveBeenCalledWith(tx, 7);
     expect(negocios.recalcular).toHaveBeenCalledWith(tx, 1);
   });
@@ -158,7 +184,7 @@ describe('LotesService.update', () => {
     const { negocios, servico } = criarServico('arroba', {
       loteAtual: loteGravado('arroba'),
     });
-    await servico.update(7, { valor_unidade: 310 }, 1);
+    await servico.update(7, { valor_unidade: 310 }, ADMIN);
     expect(negocios.recalcularGadosDoLote).not.toHaveBeenCalled();
   });
 
@@ -166,18 +192,21 @@ describe('LotesService.update', () => {
     const { negocios, servico } = criarServico('arroba', {
       loteAtual: loteGravado('arroba'),
     });
-    await servico.update(7, { media_carimbo: '9 e 10' }, 1);
+    await servico.update(7, { media_carimbo: '9 e 10' }, ADMIN);
     expect(negocios.recalcularGadosDoLote).not.toHaveBeenCalled();
     expect(negocios.recalcular).toHaveBeenCalled();
   });
 
   it('lote de outra empresa → 404', async () => {
     const { servico } = criarServico('arroba', {
-      loteAtual: { ...loteGravado('arroba'), negocio: { empresa_id: 2, modalidade: 'arroba' } },
+      loteAtual: {
+        ...loteGravado('arroba'),
+        negocio: { ...loteGravado('arroba').negocio, empresa_id: 2 },
+      },
     });
-    await expect(servico.update(7, { rendimento_carcaca: 50 }, 1)).rejects.toThrow(
-      'Lote 7 não encontrado',
-    );
+    await expect(
+      servico.update(7, { rendimento_carcaca: 50 }, ADMIN),
+    ).rejects.toThrow('Lote 7 não encontrado');
   });
 });
 
@@ -186,7 +215,7 @@ describe('LotesService.remove', () => {
     const { tx, servico } = criarServico('arroba', {
       loteAtual: loteGravado('arroba', [{}, {}]),
     });
-    const erro = servico.remove(7, 1);
+    const erro = servico.remove(7, ADMIN);
     await expect(erro).rejects.toBeInstanceOf(ConflictException);
     await expect(erro).rejects.toThrow(mensagemLoteComGados(2));
     expect(tx.lote.delete).not.toHaveBeenCalled();
@@ -196,8 +225,48 @@ describe('LotesService.remove', () => {
     const { tx, negocios, servico } = criarServico('arroba', {
       loteAtual: loteGravado('arroba'),
     });
-    await servico.remove(7, 1);
+    await servico.remove(7, ADMIN);
     expect(tx.lote.delete).toHaveBeenCalled();
     expect(negocios.recalcular).toHaveBeenCalledWith(tx, 1);
+  });
+});
+
+describe('LotesService — usuário Normal', () => {
+  const NORMAL = usuario(5, 'Normal');
+
+  it.each([
+    ['Publico de outro responsável', 6, 'Publico'],
+    ['Privado, mesmo sendo o responsável', 5, 'Privado'],
+  ])('lote de negócio %s → 404', async (_caso, responsavel, status) => {
+    const base = loteGravado('arroba');
+    const { servico } = criarServico('arroba', {
+      loteAtual: {
+        ...base,
+        negocio: {
+          ...base.negocio,
+          responsavel_id: responsavel,
+          status_visualizacao: status,
+        },
+      },
+    });
+    await expect(
+      servico.update(7, { rendimento_carcaca: 50 }, NORMAL),
+    ).rejects.toThrow('Lote 7 não encontrado');
+  });
+
+  it('edita lote do negócio Publico em que é o responsável', async () => {
+    const base = loteGravado('arroba');
+    const { servico, negocios } = criarServico('arroba', {
+      loteAtual: {
+        ...base,
+        negocio: {
+          ...base.negocio,
+          responsavel_id: 5,
+          status_visualizacao: 'Publico',
+        },
+      },
+    });
+    await servico.update(7, { rendimento_carcaca: 50 }, NORMAL);
+    expect(negocios.recalcular).toHaveBeenCalled();
   });
 });

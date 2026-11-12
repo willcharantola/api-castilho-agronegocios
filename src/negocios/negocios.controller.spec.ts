@@ -34,6 +34,7 @@ function criarController() {
     findOne: jest.fn().mockResolvedValue({ ...NEGOCIO, lotes: [] }),
     update: jest.fn().mockResolvedValue({ ...NEGOCIO }),
     concluir: jest.fn().mockResolvedValue({ ...NEGOCIO }),
+    negocioAcessivel: jest.fn().mockResolvedValue({}),
     resumo: jest.fn().mockResolvedValue({}),
   };
   return {
@@ -43,8 +44,6 @@ function criarController() {
 }
 
 describe('NegociosController — comissão por perfil', () => {
-  // As rotas de negócio completo são @Roles('Admin'); a filtragem da comissão continua como
-  // segunda barreira caso uma delas volte a ser liberada.
   it('sem perfil Admin a comissão sai null na listagem, detalhe, criação e edição', async () => {
     const { controller } = criarController();
     const respostas = [
@@ -82,7 +81,10 @@ describe('NegociosController — comissão por perfil', () => {
       porcentagem_comissao: 5,
     } as CreateNegocioDto);
     await controller.update(NORMAL, 7, { porcentagem_comissao: 9 });
-    expect(service.create).toHaveBeenCalledWith({ observacao: 'a' }, NORMAL.id);
+    expect(service.create).toHaveBeenCalledWith(
+      { observacao: 'a', status_visualizacao: 'Publico' },
+      NORMAL.id,
+    );
     expect(service.update).toHaveBeenCalledWith(7, {});
   });
 
@@ -102,6 +104,34 @@ describe('NegociosController — comissão por perfil', () => {
     expect(service.resumo).toHaveBeenNthCalledWith(2, true, {
       data_inicio: '2026-11-01',
     });
+  });
+
+  it('Normal: negócio nasce com ele como responsável e Publico; não troca esses campos', async () => {
+    const { controller, service } = criarController();
+    await controller.create(NORMAL, {
+      responsavel_id: 9,
+      status_visualizacao: 'Privado',
+    } as CreateNegocioDto);
+    expect(service.create).toHaveBeenCalledWith(
+      { status_visualizacao: 'Publico' },
+      NORMAL.id,
+    );
+    await controller.update(NORMAL, 7, {
+      responsavel_id: 9,
+      status_visualizacao: 'Privado',
+      observacao: 'x',
+    });
+    expect(service.update).toHaveBeenCalledWith(7, { observacao: 'x' });
+  });
+
+  it('detalhe e edição conferem o acesso ao negócio antes', async () => {
+    const { controller, service } = criarController();
+    service.negocioAcessivel.mockRejectedValueOnce(new Error('404'));
+    await expect(controller.findOne(NORMAL, 7)).rejects.toThrow('404');
+    expect(service.findOne).not.toHaveBeenCalled();
+    service.negocioAcessivel.mockRejectedValueOnce(new Error('404'));
+    await expect(controller.update(NORMAL, 7, {})).rejects.toThrow('404');
+    expect(service.update).not.toHaveBeenCalled();
   });
 
   it('conclusão pelo Normal devolve só os horários da pesagem', async () => {

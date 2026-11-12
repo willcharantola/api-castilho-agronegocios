@@ -17,8 +17,8 @@ import { PecuaristasService } from './pecuaristas.service';
 
 @ApiTags('pecuaristas')
 @ApiBearerAuth()
-// Cadastros: somente Admin (o usuário Normal só acessa as rotas de pesagem).
-@Roles('Admin')
+// Consultar e cadastrar: liberado a todos (o Normal escolhe ou cadastra pecuarista, fazenda
+// e comprador ao cadastrar um negócio). Alterar e excluir: só Admin (Normal → 403).
 @Controller('pecuaristas')
 export class PecuaristasController {
   constructor(private readonly pecuaristasService: PecuaristasService) {}
@@ -38,6 +38,7 @@ export class PecuaristasController {
     return this.pecuaristasService.findOne(id);
   }
 
+  @Roles('Admin')
   @Patch(':id')
   update(
     @Param('id', ParseIntPipe) id: number,
@@ -46,6 +47,7 @@ export class PecuaristasController {
     return this.pecuaristasService.update(id, dto);
   }
 
+  @Roles('Admin')
   @Delete(':id')
   remove(@Param('id', ParseIntPipe) id: number) {
     return this.pecuaristasService.remove(id);
@@ -61,6 +63,7 @@ export class PecuaristasController {
     return this.pecuaristasService.associarFazenda(id, dto);
   }
 
+  @Roles('Admin')
   @Delete(':id/fazendas/:fazendaId')
   desassociarFazenda(
     @Param('id', ParseIntPipe) id: number,

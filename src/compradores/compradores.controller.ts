@@ -23,8 +23,8 @@ import { UpdateCompradorDto } from './dto/update-comprador.dto';
 
 @ApiTags('compradores')
 @ApiBearerAuth()
-// Cadastros: somente Admin (o usuário Normal só acessa as rotas de pesagem).
-@Roles('Admin')
+// Consultar e cadastrar: liberado a todos (o Normal escolhe ou cadastra pecuarista, fazenda
+// e comprador ao cadastrar um negócio). Alterar e excluir: só Admin (Normal → 403).
 @Controller('compradores')
 export class CompradoresController {
   constructor(private readonly compradoresService: CompradoresService) {}
@@ -63,6 +63,7 @@ export class CompradoresController {
     return this.compradoresService.findOne(id);
   }
 
+  @Roles('Admin')
   @Patch(':id')
   update(
     @Param('id', ParseIntPipe) id: number,
@@ -71,6 +72,7 @@ export class CompradoresController {
     return this.compradoresService.update(id, dto);
   }
 
+  @Roles('Admin')
   @Delete(':id')
   remove(@Param('id', ParseIntPipe) id: number) {
     return this.compradoresService.remove(id);
