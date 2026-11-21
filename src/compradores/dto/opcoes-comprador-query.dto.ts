@@ -10,10 +10,11 @@ import {
 } from 'class-validator';
 
 export class OpcoesCompradorQueryDto {
-  @ApiPropertyOptional({ maxLength: 50 })
+  // Procura também pelo nome do pecuarista comprador, que vai até 100 caracteres.
+  @ApiPropertyOptional({ maxLength: 100 })
   @IsOptional()
   @IsString()
-  @MaxLength(50)
+  @MaxLength(100)
   busca?: string;
 
   @ApiPropertyOptional({ minimum: 1, maximum: 500, default: 200 })

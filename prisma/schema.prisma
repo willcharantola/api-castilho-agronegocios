@@ -130,7 +130,7 @@ model fazenda {
 
 model pecuarista {
   pecuarista_id      Int                  @id @default(autoincrement()) @map("vendedor_id")
-  nome_pecuarista    String               @map("nome_vendedor") @db.VarChar(50)
+  nome_pecuarista    String               @map("nome_vendedor") @db.VarChar(100)
   fisico_juridico    String               @db.VarChar(8)
   cpf_cnpj           String               @db.VarChar(20)
   /// Dados bancários opcionais (2026-11-07): banco, agência e conta vêm juntos ou nenhum
