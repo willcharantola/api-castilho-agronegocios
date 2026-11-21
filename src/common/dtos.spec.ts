@@ -492,6 +492,38 @@ describe('DTOs do novo modelo de dados', () => {
   });
 
   describe('pecuarista', () => {
+    const COM_FAZENDA = { ...PECUARISTA, fazendas: [{ fazenda_id: 7 }] };
+
+    it('nome com até 100 caracteres é aceito (cadastro e edição)', async () => {
+      const nome = 'A'.repeat(90) + ' Pecuário';
+      expect(nome).toHaveLength(99);
+      await expect(
+        validar(CreatePecuaristaDto, {
+          ...COM_FAZENDA,
+          nome_pecuarista: 'A'.repeat(100),
+        }),
+      ).resolves.toMatchObject({ nome_pecuarista: 'A'.repeat(100) });
+      await expect(
+        validar(UpdatePecuaristaDto, { nome_pecuarista: nome }),
+      ).resolves.toMatchObject({ nome_pecuarista: nome });
+    });
+
+    it('nome com 101 caracteres é recusado com mensagem clara', async () => {
+      const erro = validar(CreatePecuaristaDto, {
+        ...COM_FAZENDA,
+        nome_pecuarista: 'A'.repeat(101),
+      });
+      await expect(erro).rejects.toThrow();
+      await erro.catch((e: { getResponse: () => { message: string[] } }) => {
+        expect(e.getResponse().message).toContain(
+          'O nome do pecuarista pode ter no máximo 100 caracteres',
+        );
+      });
+      await expect(
+        validar(UpdatePecuaristaDto, { nome_pecuarista: 'A'.repeat(101) }),
+      ).rejects.toThrow();
+    });
+
     it('exige pelo menos uma fazenda', async () => {
       await expect(
         validar(CreatePecuaristaDto, { ...PECUARISTA, fazendas: [] }),

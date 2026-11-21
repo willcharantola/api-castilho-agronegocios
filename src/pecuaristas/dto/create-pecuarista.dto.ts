@@ -34,10 +34,12 @@ function DadoBancarioOpcional(maxLength: number): PropertyDecorator {
 }
 
 export class CreatePecuaristaDto {
-  @ApiProperty({ maxLength: 50 })
+  @ApiProperty({ maxLength: 100 })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(50)
+  @MaxLength(100, {
+    message: 'O nome do pecuarista pode ter no máximo 100 caracteres',
+  })
   nome_pecuarista: string;
 
   @ApiProperty({ enum: ['fisico', 'juridico'] })
