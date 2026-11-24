@@ -535,7 +535,8 @@ describe('NegociosService.resumo', () => {
     expect(aggregate.mock.calls[0][0].where).toEqual({
       data_negocio: {
         gte: new Date('2026-11-01'),
-        lte: new Date('2026-11-30'),
+        // O dia final entra inteiro (ver data-negocio.util).
+        lte: new Date('2026-11-30T23:59:59.999Z'),
       },
     });
   });

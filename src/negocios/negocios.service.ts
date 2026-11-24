@@ -13,6 +13,11 @@ import {
   STATUS_PUBLICO,
   type TipoNegocio,
 } from '../common/dominio';
+import {
+  dataNegocioParaGravar,
+  fimDoDia,
+  inicioDoDia,
+} from '../common/data-negocio.util';
 import { criarIdempotente } from '../common/idempotencia.util';
 import { handlePrismaError } from '../common/prisma-error.util';
 import { horaAtual, horaParaDate } from '../common/time.util';
@@ -127,8 +132,8 @@ function filtroDeNegocios({
   }
   if (dataInicio || dataFim) {
     where.data_negocio = {
-      ...(dataInicio ? { gte: new Date(dataInicio) } : {}),
-      ...(dataFim ? { lte: new Date(dataFim) } : {}),
+      ...(dataInicio ? { gte: inicioDoDia(dataInicio) } : {}),
+      ...(dataFim ? { lte: fimDoDia(dataFim) } : {}),
     };
   }
   return where;
@@ -190,7 +195,7 @@ export class NegociosService {
             ...aliquotas,
             responsavel_id: responsavelId,
             status_visualizacao: dto.status_visualizacao ?? STATUS_PRIVADO,
-            data_negocio: new Date(dto.data_negocio),
+            data_negocio: dataNegocioParaGravar(dto.data_negocio),
             // Ainda não há lotes (bruto = 0), então a comissão em R$ começa em 0
             // e é recalculada por recalcular() conforme o valor total muda.
             comissao: dto.porcentagem_comissao != null ? 0 : null,
@@ -395,7 +400,7 @@ export class NegociosService {
             ...dados,
             ...colunas,
             ...(dto.data_negocio
-              ? { data_negocio: new Date(dto.data_negocio) }
+              ? { data_negocio: dataNegocioParaGravar(dto.data_negocio) }
               : {}),
             ...(trocouModoComissao && dto.porcentagem_comissao === undefined
               ? { porcentagem_comissao: null }

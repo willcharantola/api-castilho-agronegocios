@@ -67,7 +67,12 @@ export class CreateNegocioDto {
   @IsIn(TIPOS_NEGOCIO)
   tipo_negocio: string;
 
-  @ApiProperty({ example: '2026-09-09T00:00:00.000Z' })
+  @ApiProperty({
+    example: '2026-09-09',
+    description:
+      'Data de calendário "YYYY-MM-DD" (o dia escolhido no aparelho). A API grava a ' +
+      'meia-noite UTC desse dia; um ISO completo também é aceito, mas só a data conta.',
+  })
   @IsDateString()
   data_negocio: string;
 
